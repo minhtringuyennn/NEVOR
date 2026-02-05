@@ -1,0 +1,55 @@
+name: Deploy to Cloudflare Workers
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      # Set the private key for dotenvx decryption
+      DOTENV_PRIVATE_KEY: ${{ secrets.DOTENV_PRIVATE_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate TypeScript types
+        run: npx wrangler types
+
+      - name: Run database migrations
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: d1 migrations apply shopify-zalo-db --remote
+
+      - name: Prepare Secrets
+        run: |
+          # Extract secret names from .env (excluding comments and public keys)
+          SECRET_NAMES=$(awk -F= '!/^#/ && !/^DOTENV_PUBLIC_KEY/ && NF {print $1}' .env)
+          echo "WORKER_SECRET_NAMES<<EOF" >> $GITHUB_ENV
+          echo "$SECRET_NAMES" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+          # Decrypt and export secrets for wrangler-action
+          npx dotenvx decrypt --stdout -f .env | grep -v '^#' >> $GITHUB_ENV
+        env:
+          DOTENV_PRIVATE_KEY: ${{ secrets.DOTENV_PRIVATE_KEY }}
+
+      - name: Deploy to Cloudflare
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          secrets: ${{ env.WORKER_SECRET_NAMES }}

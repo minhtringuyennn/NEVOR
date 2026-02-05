@@ -1,0 +1,13 @@
+name = "shopify-zalo-worker"
+main = "src/index.ts"
+compatibility_date = "2025-08-21"
+compatibility_flags = ["nodejs_compat"]
+
+# Worker configuration
+workers_dev = true
+
+# D1 Database binding
+[[d1_databases]]
+binding = "DB"
+database_name = "shopify-zalo-db"
+database_id = "5241ff9f-2a2d-4b50-a506-002d73be91d7"

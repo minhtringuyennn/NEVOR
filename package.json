@@ -1,0 +1,33 @@
+{
+  "name": "shopify-zalo-worker",
+  "version": "1.0.0",
+  "description": "Cloudflare Worker for Shopify to Zalo ZBS integration",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest",
+    "cf-typegen": "wrangler types"
+  },
+  "keywords": [
+    "cloudflare",
+    "workers",
+    "shopify",
+    "zalo",
+    "webhook"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241127.0",
+    "@dotenvx/dotenvx": "^1.52.0",
+    "@types/node": "^22.10.2",
+    "typed-htmx": "^0.3.1",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8",
+    "wrangler": "^3.101.0"
+  },
+  "dependencies": {
+    "hono": "^4.6.14"
+  }
+}
