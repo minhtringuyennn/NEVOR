@@ -11,3 +11,8 @@ workers_dev = true
 binding = "DB"
 database_name = "shopify-zalo-db"
 database_id = "5241ff9f-2a2d-4b50-a506-002d73be91d7"
+
+[observability]
+[observability.logs]
+enabled = false
+invocation_logs = true
