@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import type { ShopifyOrder } from '../types/shopify';
 import { ShopifyService } from '../services/shopify';
 import { ZaloService } from '../services/zalo';
+import { FieldMapperService } from '../services/fieldMapper';
 import { addServerLog } from './admin';
 
 type Bindings = {
@@ -54,6 +55,23 @@ webhook.post('/shopify', async (c) => {
     // Parse payload
     const payload = JSON.parse(rawBody);
     const order: ShopifyOrder = payload;
+
+    // Check if webhook already exists (Shopify retry)
+    const existingWebhook = await c.env.DB.prepare(
+      'SELECT id, status FROM webhook_logs WHERE webhook_id = ?'
+    )
+      .bind(webhookId)
+      .first<{ id: number; status: string }>();
+
+    if (existingWebhook) {
+      addServerLog('info', `Webhook ${webhookId} already processed (status: ${existingWebhook.status}), skipping`, 'webhook');
+      return c.json({
+        status: 'duplicate',
+        webhook_id: webhookId,
+        message: 'Webhook already processed',
+        existing_status: existingWebhook.status,
+      });
+    }
 
     // Log webhook to database
     const webhookLogResult = await c.env.DB.prepare(
@@ -147,40 +165,63 @@ webhook.post('/shopify', async (c) => {
       c.env.ZALO_OA_ID
     );
 
-    // Extract customer name from order
-    const customerName = order.customer
-      ? `${order.customer.first_name || ''} ${order.customer.last_name || ''}`.trim()
-      : order.shipping_address?.name || 'Khách hàng';
+    // Get field mappings from database
+    const mappingsResult = await c.env.DB.prepare(
+      'SELECT * FROM zalo_field_mappings ORDER BY is_required DESC, zalo_field_name'
+    ).all<{
+      id: number;
+      zalo_field_name: string;
+      shopify_json_path: string;
+      default_value: string | null;
+      is_required: number;
+      description: string | null;
+    }>();
 
-    // Build template data matching Zalo ZBS template variables
-    const templateData: Record<string, string> = {};
+    const mappings = (mappingsResult.results || []).map(m => ({
+      id: m.id,
+      zalo_field_name: m.zalo_field_name,
+      shopify_json_path: m.shopify_json_path,
+      is_required: m.is_required === 1,
+      default_value: m.default_value,
+      description: m.description,
+      created_at: '',
+      updated_at: '',
+    }));
 
-    // Always include these core fields for Zalo template
-    templateData.customer_name = customerName || 'Khách hàng';
-    templateData.order_code = order.name || `#${order.order_number}`;
-    templateData.total_amount = `${order.total_price} ${order.currency}`;
+    // Build template data using field mappings
+    let templateData: Record<string, string>;
 
-    // Optional fields based on config
-    if (config.include_order_number) {
-      templateData.order_number = order.order_number.toString();
+    if (mappings.length === 0) {
+      // Fallback to default behavior if no mappings configured
+      const customerName = order.customer
+        ? `${order.customer.first_name || ''} ${order.customer.last_name || ''}`.trim()
+        : order.shipping_address?.name || 'Khách hàng';
+
+      templateData = {
+        customer_name: customerName || 'Khách hàng',
+        order_code: order.name || `#${order.order_number}`,
+        total_amount: `${order.total_price} ${order.currency}`,
+      };
+    } else {
+      templateData = FieldMapperService.buildTemplateData(order, mappings);
     }
 
-    if (config.include_total_amount) {
-      templateData.subtotal = order.subtotal_price || order.total_price;
-      templateData.total = order.total_price;
-    }
+    // Validate required fields
+    const validation = FieldMapperService.validateRequiredFields(templateData, mappings);
+    if (!validation.valid) {
+      await c.env.DB.prepare(
+        `UPDATE webhook_logs
+         SET status = ?, error = ?, processed_at = CURRENT_TIMESTAMP
+         WHERE id = ?`
+      )
+        .bind('failed', `Missing required fields: ${validation.missing.join(', ')}`, webhookLogId)
+        .run();
 
-    if (config.include_item_list && order.line_items) {
-      templateData.items = order.line_items
-        .map((item) => `${item.title} x${item.quantity}`)
-        .join(', ');
-    }
-
-    if (config.include_delivery_info && order.shipping_address) {
-      const addr = order.shipping_address;
-      templateData.shipping_address = [addr.address1, addr.city, addr.country]
-        .filter(Boolean)
-        .join(', ');
+      addServerLog('error', `Order ${order.name} failed - missing required fields: ${validation.missing.join(', ')}`, 'webhook');
+      return c.json({
+        status: 'failed',
+        error: `Missing required fields: ${validation.missing.join(', ')}`,
+      });
     }
 
     const zaloResult = await zaloService.sendTemplateMessage(

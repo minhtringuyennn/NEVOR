@@ -8,6 +8,7 @@ import { DashboardView } from '../views/dashboard';
 import { SettingsView } from '../views/settings';
 import { LogsView } from '../views/logs';
 import { ServerLogsView, ServerLogsList } from '../views/server-logs';
+import { FieldMappingsView } from '../views/field-mappings';
 import { Alert, Layout } from '../views/layout';
 
 type Bindings = {
@@ -349,6 +350,9 @@ admin.post('/api/test-send', async (c) => {
   try {
     const formData = await c.req.parseBody();
     const phone = formData.phone as string;
+    const orderNumber = (formData.order_number as string) || '12345';
+    const totalAmount = (formData.total_amount as string) || '1,000,000 VND';
+    const message = (formData.message as string) || 'This is a test message from Shopify-Zalo Worker';
 
     if (!phone) {
       return c.html(<Alert type="error" message="Phone number is required" />);
@@ -361,9 +365,9 @@ admin.post('/api/test-send', async (c) => {
     );
 
     const result = await zaloService.sendTemplateMessage(phone, c.env.ZALO_TEMPLATE_ID, {
-      order_number: '12345',
-      total_amount: '1,000,000 VND',
-      message: 'This is a test message from Shopify-Zalo Worker',
+      order_number: orderNumber,
+      total_amount: totalAmount,
+      message: message,
     });
 
     if (result.error === 0) {
@@ -473,6 +477,152 @@ admin.get('/server-logs', (c) => {
 
   // For regular requests, return the full page with Layout
   return c.html(<ServerLogsView logs={logs} filter={filter} />);
+});
+
+/**
+ * Field Mappings Page - GET /admin/field-mappings
+ */
+admin.get('/field-mappings', async (c) => {
+  const db = new DatabaseService(c.env.DB);
+  const mappings = await db.getZaloFieldMappings();
+
+  return c.html(<FieldMappingsView mappings={mappings} />);
+});
+
+/**
+ * Create Field Mapping - POST /admin/api/field-mappings
+ */
+admin.post('/api/field-mappings', async (c) => {
+  try {
+    const formData = await c.req.parseBody();
+    const db = new DatabaseService(c.env.DB);
+
+    await db.createZaloFieldMapping({
+      zalo_field_name: formData.zalo_field_name as string,
+      shopify_json_path: formData.shopify_json_path as string,
+      default_value: (formData.default_value as string) || null,
+      is_required: formData.is_required === 'on',
+      description: (formData.description as string) || null,
+    });
+
+    return c.html(<Alert type="success" message="Field mapping created successfully!" />);
+  } catch (error) {
+    console.error('Create field mapping error:', error);
+    return c.html(
+      <Alert
+        type="error"
+        message={`Failed to create mapping: ${error instanceof Error ? error.message : 'Unknown error'}`}
+      />
+    );
+  }
+});
+
+/**
+ * Delete Field Mapping - DELETE /admin/api/field-mappings/:id
+ */
+admin.delete('/api/field-mappings/:id', async (c) => {
+  try {
+    const id = parseInt(c.req.param('id'));
+    const db = new DatabaseService(c.env.DB);
+
+    await db.deleteZaloFieldMapping(id);
+
+    return c.html(''); // Empty response removes the row
+  } catch (error) {
+    console.error('Delete field mapping error:', error);
+    return c.html(
+      <Alert
+        type="error"
+        message={`Failed to delete mapping: ${error instanceof Error ? error.message : 'Unknown error'}`}
+      />
+    );
+  }
+});
+
+/**
+ * Add Preset Field Mappings - POST /admin/api/field-mappings/preset/:type
+ */
+admin.post('/api/field-mappings/preset/:type', async (c) => {
+  try {
+    const presetType = c.req.param('type');
+    const db = new DatabaseService(c.env.DB);
+
+    const basicPresets = [
+      {
+        zalo_field_name: 'customer_name',
+        shopify_json_path: 'customer.first_name || " " || customer.last_name',
+        default_value: 'Khách hàng',
+        is_required: true,
+        description: 'Customer full name',
+      },
+      {
+        zalo_field_name: 'order_code',
+        shopify_json_path: 'name',
+        default_value: '',
+        is_required: true,
+        description: 'Order code/name (e.g., #1001)',
+      },
+      {
+        zalo_field_name: 'total_amount',
+        shopify_json_path: 'total_price || " " || currency',
+        default_value: '',
+        is_required: true,
+        description: 'Total order amount with currency',
+      },
+    ];
+
+    const extendedPresets = [
+      {
+        zalo_field_name: 'order_number',
+        shopify_json_path: 'order_number',
+        default_value: '',
+        is_required: false,
+        description: 'Order number without #',
+      },
+      {
+        zalo_field_name: 'items',
+        shopify_json_path: 'line_items[].title || " x" || line_items[].quantity',
+        default_value: '',
+        is_required: false,
+        description: 'Comma-separated list of items',
+      },
+      {
+        zalo_field_name: 'shipping_address',
+        shopify_json_path: 'shipping_address.address1 || ", " || shipping_address.city',
+        default_value: '',
+        is_required: false,
+        description: 'Formatted shipping address',
+      },
+    ];
+
+    const presets = presetType === 'full' ? [...basicPresets, ...extendedPresets] : basicPresets;
+
+    for (const preset of presets) {
+      try {
+        await db.createZaloFieldMapping(preset);
+      } catch (e) {
+        // Ignore duplicate errors
+        if (!(e instanceof Error && e.message.includes('UNIQUE'))) {
+          throw e;
+        }
+      }
+    }
+
+    return c.html(
+      <Alert
+        type="success"
+        message={`Added ${presets.length} field mappings. Refresh the page to see them.`}
+      />
+    );
+  } catch (error) {
+    console.error('Preset field mappings error:', error);
+    return c.html(
+      <Alert
+        type="error"
+        message={`Failed to add presets: ${error instanceof Error ? error.message : 'Unknown error'}`}
+      />
+    );
+  }
 });
 
 export default admin;

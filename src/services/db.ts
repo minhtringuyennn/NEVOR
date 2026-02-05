@@ -43,6 +43,17 @@ export interface Setting {
   updated_at: string;
 }
 
+export interface ZaloFieldMapping {
+  id: number;
+  zalo_field_name: string;
+  shopify_json_path: string;
+  default_value: string | null;
+  is_required: boolean;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export class DatabaseService {
   constructor(private db: D1Database) {}
 
@@ -280,6 +291,91 @@ export class DatabaseService {
          WHERE id = ?`
       )
       .bind(webhookId)
+      .run();
+  }
+
+  /**
+   * Get all Zalo field mappings
+   */
+  async getZaloFieldMappings(): Promise<ZaloFieldMapping[]> {
+    const result = await this.db
+      .prepare('SELECT * FROM zalo_field_mappings ORDER BY is_required DESC, zalo_field_name')
+      .all();
+    return (result.results || []) as unknown as ZaloFieldMapping[];
+  }
+
+  /**
+   * Get a single Zalo field mapping by ID
+   */
+  async getZaloFieldMapping(id: number): Promise<ZaloFieldMapping | null> {
+    const result = await this.db
+      .prepare('SELECT * FROM zalo_field_mappings WHERE id = ?')
+      .bind(id)
+      .first();
+    return result as ZaloFieldMapping | null;
+  }
+
+  /**
+   * Create a new Zalo field mapping
+   */
+  async createZaloFieldMapping(mapping: Omit<ZaloFieldMapping, 'id' | 'created_at' | 'updated_at'>): Promise<void> {
+    await this.db
+      .prepare(
+        `INSERT INTO zalo_field_mappings (zalo_field_name, shopify_json_path, default_value, is_required, description)
+         VALUES (?, ?, ?, ?, ?)`
+      )
+      .bind(
+        mapping.zalo_field_name,
+        mapping.shopify_json_path,
+        mapping.default_value || null,
+        mapping.is_required ? 1 : 0,
+        mapping.description || null
+      )
+      .run();
+  }
+
+  /**
+   * Update a Zalo field mapping
+   */
+  async updateZaloFieldMapping(id: number, mapping: Partial<ZaloFieldMapping>): Promise<void> {
+    const fields: string[] = [];
+    const values: any[] = [];
+
+    if (mapping.zalo_field_name !== undefined) {
+      fields.push('zalo_field_name = ?');
+      values.push(mapping.zalo_field_name);
+    }
+    if (mapping.shopify_json_path !== undefined) {
+      fields.push('shopify_json_path = ?');
+      values.push(mapping.shopify_json_path);
+    }
+    if (mapping.default_value !== undefined) {
+      fields.push('default_value = ?');
+      values.push(mapping.default_value);
+    }
+    if (mapping.is_required !== undefined) {
+      fields.push('is_required = ?');
+      values.push(mapping.is_required ? 1 : 0);
+    }
+    if (mapping.description !== undefined) {
+      fields.push('description = ?');
+      values.push(mapping.description);
+    }
+
+    fields.push('updated_at = CURRENT_TIMESTAMP');
+    values.push(id);
+
+    const query = `UPDATE zalo_field_mappings SET ${fields.join(', ')} WHERE id = ?`;
+    await this.db.prepare(query).bind(...values).run();
+  }
+
+  /**
+   * Delete a Zalo field mapping
+   */
+  async deleteZaloFieldMapping(id: number): Promise<void> {
+    await this.db
+      .prepare('DELETE FROM zalo_field_mappings WHERE id = ?')
+      .bind(id)
       .run();
   }
 }

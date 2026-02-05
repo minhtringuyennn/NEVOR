@@ -190,6 +190,39 @@ export const SettingsView: FC<SettingsViewProps> = (props) => {
                         class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500"
                       />
                     </div>
+                    <div>
+                      <label class="block text-xs font-medium text-gray-700 mb-1">
+                        Order Number
+                      </label>
+                      <input
+                        type="text"
+                        name="order_number"
+                        value="12345"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label class="block text-xs font-medium text-gray-700 mb-1">
+                        Total Amount
+                      </label>
+                      <input
+                        type="text"
+                        name="total_amount"
+                        value="1,000,000 VND"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label class="block text-xs font-medium text-gray-700 mb-1">
+                        Message
+                      </label>
+                      <input
+                        type="text"
+                        name="message"
+                        value="This is a test message from Shopify-Zalo Worker"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    </div>
                     <div id="test-send-result" class="text-sm"></div>
                     <button
                       type="submit"
@@ -200,6 +233,22 @@ export const SettingsView: FC<SettingsViewProps> = (props) => {
                   </div>
                 </form>
               </div>
+            </div>
+          </Card>
+
+          {/* Zalo Template Field Mappings */}
+          <Card title="Zalo Template Field Mappings">
+            <div class="space-y-3">
+              <p class="text-sm text-gray-600">
+                Configure how Shopify webhook data maps to your Zalo template fields. Each Zalo
+                template has specific field names that must match exactly.
+              </p>
+              <a
+                href="/admin/field-mappings"
+                class="inline-block px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition text-sm font-medium"
+              >
+                Configure Field Mappings →
+              </a>
             </div>
           </Card>
 
