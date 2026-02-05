@@ -27,19 +27,13 @@ jobs:
           npx dotenvx decrypt -f .env --stdout > .env.decrypted
 
           # Export Cloudflare credentials
-          echo "CLOUDFLARE_API_KEY=$(grep '^CLOUDFLARE_API_KEY=' .env.decrypted | cut -d'=' -f2)" >> $GITHUB_ENV
-          echo "CLOUDFLARE_EMAIL=$(grep '^CLOUDFLARE_EMAIL=' .env.decrypted | cut -d'=' -f2)" >> $GITHUB_ENV
+          echo "CLOUDFLARE_API_KEY=$(grep '^CLOUDFLARE_API_KEY=' .env.decrypted | cut -d'=' -f2-)" >> $GITHUB_ENV
+          echo "CLOUDFLARE_EMAIL=$(grep '^CLOUDFLARE_EMAIL=' .env.decrypted | cut -d'=' -f2-)" >> $GITHUB_ENV
 
-          # Export all secret names for worker deployment
-          SECRET_NAMES=$(grep -v '^#' .env.decrypted | grep -v '^DOTENV_PUBLIC_KEY' | cut -d'=' -f1)
-          echo "WORKER_SECRET_NAMES<<EOF" >> $GITHUB_ENV
-          echo "$SECRET_NAMES" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
+          # Create secrets file for wrangler (exclude Cloudflare credentials, only worker secrets)
+          grep -v '^#' .env.decrypted | grep -v '^DOTENV_PUBLIC_KEY' | grep -v '^CLOUDFLARE_' > .secrets.env
 
-          # Export all secrets for deployment
-          cat .env.decrypted >> $GITHUB_ENV
-
-          # Clean up decrypted file
+          # Clean up
           rm .env.decrypted
         env:
           DOTENV_PRIVATE_KEY: ${{ secrets.DOTENV_PRIVATE_KEY }}
@@ -56,7 +50,18 @@ jobs:
           CLOUDFLARE_API_KEY: ${{ env.CLOUDFLARE_API_KEY }}
           CLOUDFLARE_EMAIL: ${{ env.CLOUDFLARE_EMAIL }}
 
-      - name: Deploy to Cloudflare
+      - name: Upload secrets to Cloudflare
+        run: |
+          # Upload all secrets from .secrets.env
+          npx wrangler secret bulk .secrets.env
+
+          # Clean up
+          rm .secrets.env
+        env:
+          CLOUDFLARE_API_KEY: ${{ env.CLOUDFLARE_API_KEY }}
+          CLOUDFLARE_EMAIL: ${{ env.CLOUDFLARE_EMAIL }}
+
+      - name: Deploy Worker
         run: npx wrangler deploy
         env:
           CLOUDFLARE_API_KEY: ${{ env.CLOUDFLARE_API_KEY }}
