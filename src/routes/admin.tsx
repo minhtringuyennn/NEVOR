@@ -638,10 +638,10 @@ admin.post('/api/field-mappings/preset/:type', async (c) => {
       },
       {
         zalo_field_name: 'total_amount',
-        shopify_json_path: 'total_price || " " || currency',
+        shopify_json_path: 'total_price',
         default_value: '',
         is_required: true,
-        description: 'Total order amount with currency',
+        description: 'Total order amount (number only)',
       },
     ];
 

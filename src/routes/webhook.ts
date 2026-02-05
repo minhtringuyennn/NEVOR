@@ -202,7 +202,7 @@ webhook.post('/shopify', async (c) => {
       templateData = {
         customer_name: customerName || 'Khách hàng',
         order_code: order.name || `#${order.order_number}`,
-        total_amount: `${order.total_price} ${order.currency}`,
+        total_amount: `${order.total_price}`,
       };
     } else {
       templateData = FieldMapperService.buildTemplateData(order, mappings);
