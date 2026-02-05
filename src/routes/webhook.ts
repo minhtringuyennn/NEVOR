@@ -125,7 +125,7 @@ webhook.post('/shopify', async (c) => {
       });
     }
 
-    // Format message
+    // Format message for logging
     const message = shopifyService.formatOrderSummary(order, config);
 
     // Send Zalo message
@@ -135,11 +135,41 @@ webhook.post('/shopify', async (c) => {
       c.env.ZALO_OA_ID
     );
 
-    const templateData = {
-      order_number: order.order_number.toString(),
-      total_amount: `${order.total_price} ${order.currency}`,
-      message: message,
-    };
+    // Extract customer name from order
+    const customerName = order.customer
+      ? `${order.customer.first_name || ''} ${order.customer.last_name || ''}`.trim()
+      : order.shipping_address?.name || 'Khách hàng';
+
+    // Build template data matching Zalo ZBS template variables
+    const templateData: Record<string, string> = {};
+
+    // Always include these core fields for Zalo template
+    templateData.customer_name = customerName || 'Khách hàng';
+    templateData.order_code = order.name || `#${order.order_number}`;
+    templateData.total_amount = `${order.total_price} ${order.currency}`;
+
+    // Optional fields based on config
+    if (config.include_order_number) {
+      templateData.order_number = order.order_number.toString();
+    }
+
+    if (config.include_total_amount) {
+      templateData.subtotal = order.subtotal_price || order.total_price;
+      templateData.total = order.total_price;
+    }
+
+    if (config.include_item_list && order.line_items) {
+      templateData.items = order.line_items
+        .map((item) => `${item.title} x${item.quantity}`)
+        .join(', ');
+    }
+
+    if (config.include_delivery_info && order.shipping_address) {
+      const addr = order.shipping_address;
+      templateData.shipping_address = [addr.address1, addr.city, addr.country]
+        .filter(Boolean)
+        .join(', ');
+    }
 
     const zaloResult = await zaloService.sendTemplateMessage(
       phone,
