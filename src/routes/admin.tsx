@@ -9,6 +9,7 @@ import { SettingsView } from '../views/settings';
 import { LogsView } from '../views/logs';
 import { ServerLogsView, ServerLogsList } from '../views/server-logs';
 import { FieldMappingsView } from '../views/field-mappings';
+import { TemplatesView } from '../views/templates';
 import { Alert, Layout } from '../views/layout';
 
 type Bindings = {
@@ -382,6 +383,55 @@ admin.get('/api/template-info', async (c) => {
 });
 
 /**
+ * List All Templates - GET /admin/api/templates
+ */
+admin.get('/api/templates', async (c) => {
+  try {
+    const zaloService = new ZaloService(
+      c.env.ZALO_APP_ID,
+      c.env.ZALO_ACCESS_TOKEN,
+      c.env.ZALO_OA_ID
+    );
+
+    const result = await zaloService.listAllTemplates(0, 100);
+
+    if (result.error === 0) {
+      return c.json(result.data);
+    } else {
+      return c.json({ error: result.message }, 400);
+    }
+  } catch (error) {
+    console.error('List templates error:', error);
+    return c.json({ error: error instanceof Error ? error.message : 'Unknown error' }, 500);
+  }
+});
+
+/**
+ * Get Template Details - GET /admin/api/templates/:id
+ */
+admin.get('/api/templates/:id', async (c) => {
+  try {
+    const templateId = c.req.param('id');
+    const zaloService = new ZaloService(
+      c.env.ZALO_APP_ID,
+      c.env.ZALO_ACCESS_TOKEN,
+      c.env.ZALO_OA_ID
+    );
+
+    const result = await zaloService.getTemplateInfo(templateId);
+
+    if (result.error === 0) {
+      return c.json(result.data);
+    } else {
+      return c.json({ error: result.message }, 400);
+    }
+  } catch (error) {
+    console.error('Get template details error:', error);
+    return c.json({ error: error instanceof Error ? error.message : 'Unknown error' }, 500);
+  }
+});
+
+/**
  * Test Send Message - POST /admin/api/test-send
  */
 admin.post('/api/test-send', async (c) => {
@@ -551,6 +601,51 @@ admin.get('/server-logs', (c) => {
 
   // For regular requests, return the full page with Layout
   return c.html(<ServerLogsView logs={logs} filter={filter} />);
+});
+
+/**
+ * Templates Page - GET /admin/templates
+ */
+admin.get('/templates', async (c) => {
+  return c.html(<TemplatesView />);
+});
+
+/**
+ * Templates Page with selected template - GET /admin/templates/:id
+ */
+admin.get('/templates/:id', async (c) => {
+  try {
+    const templateId = c.req.param('id');
+    const zaloService = new ZaloService(
+      c.env.ZALO_APP_ID,
+      c.env.ZALO_ACCESS_TOKEN,
+      c.env.ZALO_OA_ID
+    );
+
+    // Fetch all templates and the selected one
+    const [listResult, detailResult] = await Promise.all([
+      zaloService.listAllTemplates(0, 100),
+      zaloService.getTemplateInfo(templateId),
+    ]);
+
+    const templates = listResult.error === 0 ? listResult.data?.templates || [] : [];
+    const selectedTemplate = detailResult.error === 0 ? detailResult.data : null;
+
+    return c.html(
+      <TemplatesView
+        templates={templates}
+        selectedTemplate={selectedTemplate}
+        error={listResult.error !== 0 ? listResult.message : undefined}
+      />
+    );
+  } catch (error) {
+    console.error('Templates page error:', error);
+    return c.html(
+      <TemplatesView
+        error={error instanceof Error ? error.message : 'Unknown error'}
+      />
+    );
+  }
 });
 
 /**

@@ -42,6 +42,38 @@ export interface ZaloTemplateInfo {
     preview_url: string;
     template_quality: string;
     template_tag: string;
+    created_time: string;
+    updated_time: string;
+    approved_time?: string;
+    params?: Array<{
+      name: string;
+      require: boolean;
+      type: string;
+      description?: string;
+    }>;
+    buttons?: Array<{
+      type: string;
+      title: string;
+      payload?: string;
+    }>;
+  };
+}
+
+export interface ZaloTemplateList {
+  error: number;
+  message: string;
+  data?: {
+    total: number;
+    templates: Array<{
+      template_id: string;
+      template_name: string;
+      status: string;
+      preview_url: string;
+      template_quality: string;
+      template_tag: string;
+      created_time: string;
+      updated_time: string;
+    }>;
   };
 }
 

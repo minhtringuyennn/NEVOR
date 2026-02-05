@@ -56,6 +56,16 @@ export const Layout: FC<{ title: string; activePage?: string; children?: any }> 
                   Settings
                 </a>
                 <a
+                  href="/admin/templates"
+                  class={`flex items-center px-3 py-2 text-sm font-medium ${
+                    props.activePage === 'templates'
+                      ? 'text-blue-600 border-b-2 border-blue-600'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Templates
+                </a>
+                <a
                   href="/admin/field-mappings"
                   class={`flex items-center px-3 py-2 text-sm font-medium ${
                     props.activePage === 'field-mappings'

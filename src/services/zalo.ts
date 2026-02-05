@@ -5,6 +5,7 @@ import type {
   ZaloSendMessageResponse,
   ZaloOAProfile,
   ZaloTemplateInfo,
+  ZaloTemplateList,
   ZaloQuota,
 } from '../types/zalo';
 
@@ -167,6 +168,41 @@ export class ZaloService {
       return result;
     } catch (error) {
       console.error('Zalo get quota error:', error);
+      return {
+        error: -1,
+        message: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  }
+
+  /**
+   * List all templates with optional filtering
+   * @param offset Pagination offset
+   * @param limit Number of templates to return (max 100)
+   * @param status Filter by status (approved, pending, rejected)
+   */
+  async listAllTemplates(
+    offset: number = 0,
+    limit: number = 100,
+    status?: string
+  ): Promise<ZaloTemplateList> {
+    try {
+      let url = `${this.baseUrl}/template/all?offset=${offset}&limit=${limit}`;
+      if (status) {
+        url += `&status=${status}`;
+      }
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          access_token: this.accessToken,
+        },
+      });
+
+      const result: ZaloTemplateList = await response.json();
+      return result;
+    } catch (error) {
+      console.error('Zalo list templates error:', error);
       return {
         error: -1,
         message: error instanceof Error ? error.message : 'Unknown error',
