@@ -396,17 +396,53 @@ admin.post('/api/test-send', async (c) => {
       return c.html(<Alert type="error" message="Phone number is required" />);
     }
 
+    const db = new DatabaseService(c.env.DB);
     const zaloService = new ZaloService(
       c.env.ZALO_APP_ID,
       c.env.ZALO_ACCESS_TOKEN,
       c.env.ZALO_OA_ID
     );
 
-    const result = await zaloService.sendTemplateMessage(phone, c.env.ZALO_TEMPLATE_ID, {
-      order_number: orderNumber,
-      total_amount: totalAmount,
-      message: message,
-    });
+    // Get field mappings from database
+    const mappings = await db.getZaloFieldMappings();
+
+    // Build template data using field mappings
+    // Map form values to the configured Zalo field names
+    const templateData: Record<string, string> = {};
+
+    for (const mapping of mappings) {
+      // Map common field names to form values
+      switch (mapping.zalo_field_name.toLowerCase()) {
+        case 'order_number':
+        case 'order_code':
+          templateData[mapping.zalo_field_name] = orderNumber;
+          break;
+        case 'total_amount':
+        case 'total':
+        case 'amount':
+          templateData[mapping.zalo_field_name] = totalAmount;
+          break;
+        case 'message':
+        case 'content':
+          templateData[mapping.zalo_field_name] = message;
+          break;
+        case 'customer_name':
+          templateData[mapping.zalo_field_name] = 'Test Customer';
+          break;
+        default:
+          // For other fields, use default value or empty string
+          templateData[mapping.zalo_field_name] = mapping.default_value || '';
+      }
+    }
+
+    // If no mappings configured, fallback to form field names
+    if (mappings.length === 0) {
+      templateData.order_number = orderNumber;
+      templateData.total_amount = totalAmount;
+      templateData.message = message;
+    }
+
+    const result = await zaloService.sendTemplateMessage(phone, c.env.ZALO_TEMPLATE_ID, templateData);
 
     if (result.error === 0) {
       return c.html(
