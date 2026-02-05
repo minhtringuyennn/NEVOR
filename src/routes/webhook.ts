@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import type { ShopifyOrder } from '../types/shopify';
 import { ShopifyService } from '../services/shopify';
 import { ZaloService } from '../services/zalo';
+import { addServerLog } from './admin';
 
 type Bindings = {
   DB: D1Database;
@@ -33,18 +34,22 @@ webhook.post('/shopify', async (c) => {
     const webhookId = c.req.header('x-shopify-webhook-id');
 
     if (!hmacHeader || !topic || !shopDomain || !webhookId) {
-      console.error('Missing required webhook headers');
+      addServerLog('error', 'Missing required webhook headers', 'webhook');
       return c.json({ error: 'Missing required headers' }, 400);
     }
+
+    addServerLog('info', `Received webhook ${webhookId} from ${shopDomain} (${topic})`, 'webhook');
 
     // Verify webhook authenticity
     const shopifyService = new ShopifyService(c.env.SHOPIFY_WEBHOOK_SECRET);
     const isValid = await shopifyService.verifyWebhook(rawBody, hmacHeader);
 
     if (!isValid) {
-      console.error('Invalid webhook signature');
+      addServerLog('error', `Invalid webhook signature for ${webhookId}`, 'webhook');
       return c.json({ error: 'Invalid signature' }, 401);
     }
+
+    addServerLog('info', `Webhook ${webhookId} signature verified`, 'webhook');
 
     // Parse payload
     const payload = JSON.parse(rawBody);
@@ -69,8 +74,11 @@ webhook.post('/shopify', async (c) => {
         .bind('ignored', webhookLogId)
         .run();
 
+      addServerLog('info', `Webhook ${webhookId} ignored - not an orders/create webhook`, 'webhook');
       return c.json({ status: 'ignored', reason: 'Not an orders/create webhook' });
     }
+
+    addServerLog('info', `Processing order ${order.name} (#${order.order_number}) from ${shopDomain}`, 'webhook');
 
     // Get message configuration
     const configResult = await c.env.DB.prepare(
@@ -101,6 +109,7 @@ webhook.post('/shopify', async (c) => {
         .bind('skipped', webhookLogId)
         .run();
 
+      addServerLog('info', `Order ${order.name} skipped - does not meet notification conditions`, 'webhook');
       return c.json({
         status: 'skipped',
         reason: 'Order does not meet notification conditions',
@@ -119,11 +128,14 @@ webhook.post('/shopify', async (c) => {
         .bind('failed', 'No phone number found in order', webhookLogId)
         .run();
 
+      addServerLog('warn', `Order ${order.name} failed - no phone number found`, 'webhook');
       return c.json({
         status: 'failed',
         error: 'No phone number found in order',
       });
     }
+
+    addServerLog('info', `Sending Zalo message to ${phone} for order ${order.name}`, 'webhook');
 
     // Format message for logging (kept for database record)
     shopifyService.formatOrderSummary(order, config);
@@ -201,6 +213,12 @@ webhook.post('/shopify', async (c) => {
       .bind(zaloResult.error === 0 ? 'success' : 'failed', webhookLogId)
       .run();
 
+    if (zaloResult.error === 0) {
+      addServerLog('info', `Zalo message sent successfully to ${phone} for order ${order.name}`, 'webhook');
+    } else {
+      addServerLog('error', `Zalo message failed to ${phone}: ${zaloResult.message}`, 'webhook');
+    }
+
     return c.json({
       status: zaloResult.error === 0 ? 'success' : 'failed',
       webhook_id: webhookId,
@@ -208,6 +226,7 @@ webhook.post('/shopify', async (c) => {
       zalo_response: zaloResult,
     });
   } catch (error) {
+    addServerLog('error', `Webhook processing error: ${error instanceof Error ? error.message : 'Unknown error'}`, 'webhook');
     console.error('Webhook processing error:', error);
     return c.json(
       {

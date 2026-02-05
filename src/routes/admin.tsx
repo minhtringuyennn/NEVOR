@@ -7,7 +7,7 @@ import { ZaloService } from '../services/zalo';
 import { DashboardView } from '../views/dashboard';
 import { SettingsView } from '../views/settings';
 import { LogsView } from '../views/logs';
-import { ServerLogsView } from '../views/server-logs';
+import { ServerLogsView, ServerLogsList } from '../views/server-logs';
 import { Alert, Layout } from '../views/layout';
 
 type Bindings = {
@@ -443,11 +443,35 @@ export function addServerLog(
 admin.get('/server-logs', (c) => {
   const filter = c.req.query('filter') as 'info' | 'warn' | 'error' | undefined;
 
+  // Add initial system logs if empty
+  if (serverLogs.length === 0) {
+    serverLogs.push(
+      {
+        timestamp: new Date().toISOString(),
+        level: 'info',
+        message: 'Server started. Logs are stored in memory and will be cleared on worker restart.',
+        source: 'system',
+      },
+      {
+        timestamp: new Date(Date.now() - 1000).toISOString(),
+        level: 'info',
+        message: 'Server logs system initialized',
+        source: 'system',
+      }
+    );
+  }
+
   let logs = serverLogs;
   if (filter) {
     logs = serverLogs.filter((log) => log.level === filter);
   }
 
+  // For HTMX requests, return only the partial view (no Layout wrapper)
+  if (c.req.header('hx-request')) {
+    return c.html(<ServerLogsList logs={logs} />);
+  }
+
+  // For regular requests, return the full page with Layout
   return c.html(<ServerLogsView logs={logs} filter={filter} />);
 });
 

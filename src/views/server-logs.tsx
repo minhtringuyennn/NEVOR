@@ -3,7 +3,7 @@
 import { FC } from 'hono/jsx';
 import { Layout, Card } from './layout';
 
-interface ServerLog {
+export interface ServerLog {
   timestamp: string;
   level: 'info' | 'warn' | 'error';
   message: string;
@@ -15,20 +15,60 @@ interface ServerLogsViewProps {
   filter?: string;
 }
 
+const getLevelColor = (level: string) => {
+  switch (level) {
+    case 'error':
+      return 'text-red-600 bg-red-50';
+    case 'warn':
+      return 'text-yellow-600 bg-yellow-50';
+    case 'info':
+    default:
+      return 'text-blue-600 bg-blue-50';
+  }
+};
+
+// Partial view for HTMX requests (no Layout wrapper)
+export const ServerLogsList: FC<{ logs: ServerLog[] }> = (props) => {
+  const { logs } = props;
+
+  return (
+    <Card title="Log Entries">
+      {logs.length === 0 ? (
+        <div class="text-center py-8 text-gray-500">
+          <p>No logs found</p>
+          <p class="text-sm mt-2">
+            Logs are stored in memory and will be cleared on worker restart
+          </p>
+        </div>
+      ) : (
+        <div class="space-y-2 max-h-[600px] overflow-y-auto">
+          {logs.map((log, index) => (
+            <div
+              key={index}
+              class={`p-3 rounded-lg border ${getLevelColor(log.level)}`}
+            >
+              <div class="flex items-center justify-between mb-1">
+                <span class="font-semibold text-sm uppercase">
+                  {log.level}
+                </span>
+                <span class="text-xs opacity-75">{log.timestamp}</span>
+              </div>
+              <p class="text-sm break-words">{log.message}</p>
+              {log.source && (
+                <p class="text-xs mt-1 opacity-75">
+                  Source: {log.source}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+};
+
 export const ServerLogsView: FC<ServerLogsViewProps> = (props) => {
   const { logs, filter } = props;
-
-  const getLevelColor = (level: string) => {
-    switch (level) {
-      case 'error':
-        return 'text-red-600 bg-red-50';
-      case 'warn':
-        return 'text-yellow-600 bg-yellow-50';
-      case 'info':
-      default:
-        return 'text-blue-600 bg-blue-50';
-    }
-  };
 
   return (
     <Layout title="Server Logs" activePage="server-logs">
@@ -84,39 +124,7 @@ export const ServerLogsView: FC<ServerLogsViewProps> = (props) => {
 
           {/* Logs Container */}
           <div id="logs-container">
-            <Card title="Log Entries">
-              {logs.length === 0 ? (
-                <div class="text-center py-8 text-gray-500">
-                  <p>No logs found</p>
-                  <p class="text-sm mt-2">
-                    Logs are stored in memory and will be cleared on worker
-                    restart
-                  </p>
-                </div>
-              ) : (
-                <div class="space-y-2 max-h-[600px] overflow-y-auto">
-                  {logs.map((log, index) => (
-                    <div
-                      key={index}
-                      class={`p-3 rounded-lg border ${getLevelColor(log.level)}`}
-                    >
-                      <div class="flex items-center justify-between mb-1">
-                        <span class="font-semibold text-sm uppercase">
-                          {log.level}
-                        </span>
-                        <span class="text-xs opacity-75">{log.timestamp}</span>
-                      </div>
-                      <p class="text-sm break-words">{log.message}</p>
-                      {log.source && (
-                        <p class="text-xs mt-1 opacity-75">
-                          Source: {log.source}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
+            <ServerLogsList logs={logs} />
           </div>
 
           {/* Stats */}
