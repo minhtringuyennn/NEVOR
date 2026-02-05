@@ -125,8 +125,8 @@ webhook.post('/shopify', async (c) => {
       });
     }
 
-    // Format message for logging
-    const message = shopifyService.formatOrderSummary(order, config);
+    // Format message for logging (kept for database record)
+    shopifyService.formatOrderSummary(order, config);
 
     // Send Zalo message
     const zaloService = new ZaloService(

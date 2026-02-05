@@ -7,6 +7,7 @@ import { ZaloService } from '../services/zalo';
 import { DashboardView } from '../views/dashboard';
 import { SettingsView } from '../views/settings';
 import { LogsView } from '../views/logs';
+import { ServerLogsView } from '../views/server-logs';
 import { Alert, Layout } from '../views/layout';
 
 type Bindings = {
@@ -408,6 +409,46 @@ admin.post('/api/retry/:id', async (c) => {
       />
     );
   }
+});
+
+// Simple in-memory log storage (resets on worker restart)
+const serverLogs: Array<{
+  timestamp: string;
+  level: 'info' | 'warn' | 'error';
+  message: string;
+  source?: string;
+}> = [];
+
+// Helper to add log
+export function addServerLog(
+  level: 'info' | 'warn' | 'error',
+  message: string,
+  source?: string
+) {
+  serverLogs.unshift({
+    timestamp: new Date().toISOString(),
+    level,
+    message,
+    source,
+  });
+  // Keep only last 100 logs
+  if (serverLogs.length > 100) {
+    serverLogs.pop();
+  }
+}
+
+/**
+ * Server Logs - GET /admin/server-logs
+ */
+admin.get('/server-logs', (c) => {
+  const filter = c.req.query('filter') as 'info' | 'warn' | 'error' | undefined;
+
+  let logs = serverLogs;
+  if (filter) {
+    logs = serverLogs.filter((log) => log.level === filter);
+  }
+
+  return c.html(<ServerLogsView logs={logs} filter={filter} />);
 });
 
 export default admin;
