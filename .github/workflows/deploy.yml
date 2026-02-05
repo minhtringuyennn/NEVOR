@@ -26,11 +26,11 @@ jobs:
           # Decrypt .env file using private key
           npx dotenvx decrypt -f .env --stdout > .env.decrypted
 
-          # Export Cloudflare credentials
-          echo "CLOUDFLARE_API_KEY=$(grep '^CLOUDFLARE_API_KEY=' .env.decrypted | cut -d'=' -f2-)" >> $GITHUB_ENV
-          echo "CLOUDFLARE_EMAIL=$(grep '^CLOUDFLARE_EMAIL=' .env.decrypted | cut -d'=' -f2-)" >> $GITHUB_ENV
-          echo "CLOUDFLARE_ACCOUNT_ID=$(grep '^CLOUDFLARE_ACCOUNT_ID=' .env.decrypted | cut -d'=' -f2-)" >> $GITHUB_ENV
-          echo "CLOUDFLARE_D1_TOKEN=$(grep '^CLOUDFLARE_D1_TOKEN=' .env.decrypted | cut -d'=' -f2-)" >> $GITHUB_ENV
+          # Export Cloudflare credentials (remove quotes if present)
+          echo "CLOUDFLARE_API_KEY=$(grep '^CLOUDFLARE_API_KEY=' .env.decrypted | cut -d'=' -f2- | tr -d '"')" >> $GITHUB_ENV
+          echo "CLOUDFLARE_EMAIL=$(grep '^CLOUDFLARE_EMAIL=' .env.decrypted | cut -d'=' -f2- | tr -d '"')" >> $GITHUB_ENV
+          echo "CLOUDFLARE_ACCOUNT_ID=$(grep '^CLOUDFLARE_ACCOUNT_ID=' .env.decrypted | cut -d'=' -f2- | tr -d '"')" >> $GITHUB_ENV
+          echo "CLOUDFLARE_D1_TOKEN=$(grep '^CLOUDFLARE_D1_TOKEN=' .env.decrypted | cut -d'=' -f2- | tr -d '"')" >> $GITHUB_ENV
 
           # Create secrets file for wrangler (exclude Cloudflare credentials, only worker secrets)
           grep -v '^#' .env.decrypted | grep -v '^DOTENV_PUBLIC_KEY' | grep -v '^CLOUDFLARE_' > .secrets.env
