@@ -99,6 +99,7 @@ export const FieldMappingsView: FC<FieldMappingsViewProps> = (props) => {
                         </td>
                         <td class="px-4 py-3 text-right text-sm">
                           <button
+                            type="button"
                             hx-delete={`/admin/api/field-mappings/${mapping.id}`}
                             hx-confirm={`Delete mapping for "${mapping.zalo_field_name}"?`}
                             hx-target="closest tr"
@@ -216,6 +217,7 @@ export const FieldMappingsView: FC<FieldMappingsViewProps> = (props) => {
               </p>
               <div class="flex flex-wrap gap-2">
                 <button
+                  type="button"
                   hx-post="/admin/api/field-mappings/preset/basic"
                   hx-target="#preset-result"
                   hx-swap="innerHTML"
@@ -224,6 +226,7 @@ export const FieldMappingsView: FC<FieldMappingsViewProps> = (props) => {
                   Add Basic Fields (customer_name, order_code, total_amount)
                 </button>
                 <button
+                  type="button"
                   hx-post="/admin/api/field-mappings/preset/full"
                   hx-target="#preset-result"
                   hx-swap="innerHTML"

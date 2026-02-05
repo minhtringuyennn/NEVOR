@@ -170,6 +170,18 @@ export const SettingsView: FC<SettingsViewProps> = (props) => {
                 Test Zalo Connection
               </button>
 
+              <div id="template-info-result" class="mt-4"></div>
+
+              <button
+                type="button"
+                hx-get="/admin/api/template-info"
+                hx-target="#template-info-result"
+                hx-swap="innerHTML"
+                class="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium"
+              >
+                Check Template Info
+              </button>
+
               <div class="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                 <h4 class="text-sm font-medium text-blue-900 mb-2">Test Send Message</h4>
                 <form

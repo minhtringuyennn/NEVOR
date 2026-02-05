@@ -344,6 +344,44 @@ admin.post('/api/test-zalo', async (c) => {
 });
 
 /**
+ * Get Template Info - GET /admin/api/template-info
+ */
+admin.get('/api/template-info', async (c) => {
+  try {
+    const zaloService = new ZaloService(
+      c.env.ZALO_APP_ID,
+      c.env.ZALO_ACCESS_TOKEN,
+      c.env.ZALO_OA_ID
+    );
+
+    const templateInfo = await zaloService.getTemplateInfo(c.env.ZALO_TEMPLATE_ID);
+
+    if (templateInfo.error === 0) {
+      return c.html(
+        <div class="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm">
+          <p class="font-medium text-blue-900">Template: {templateInfo.data?.template_name}</p>
+          <p class="text-blue-700">Status: {templateInfo.data?.status}</p>
+          <p class="text-blue-700">Quality: {templateInfo.data?.template_quality}</p>
+          <p class="text-blue-700">Tag: {templateInfo.data?.template_tag}</p>
+        </div>
+      );
+    } else {
+      return c.html(
+        <Alert type="error" message={`Failed to get template info: [${templateInfo.error}] ${templateInfo.message}`} />
+      );
+    }
+  } catch (error) {
+    console.error('Template info error:', error);
+    return c.html(
+      <Alert
+        type="error"
+        message={`Error: ${error instanceof Error ? error.message : 'Unknown error'}`}
+      />
+    );
+  }
+});
+
+/**
  * Test Send Message - POST /admin/api/test-send
  */
 admin.post('/api/test-send', async (c) => {

@@ -191,6 +191,8 @@ webhook.post('/shopify', async (c) => {
     // Build template data using field mappings
     let templateData: Record<string, string>;
 
+    addServerLog('info', `Using Zalo template_id: ${c.env.ZALO_TEMPLATE_ID}`, 'webhook');
+
     if (mappings.length === 0) {
       // Fallback to default behavior if no mappings configured
       const customerName = order.customer
@@ -230,6 +232,12 @@ webhook.post('/shopify', async (c) => {
       templateData
     );
 
+    // Log detailed Zalo response for debugging
+    addServerLog('info', `Zalo API response for ${order.name}: error=${zaloResult.error}, msg=${zaloResult.message || 'none'}`, 'webhook');
+    if (zaloResult.error !== 0) {
+      addServerLog('error', `Zalo API full response: ${JSON.stringify(zaloResult)}`, 'webhook');
+    }
+
     // Log Zalo message
     await c.env.DB.prepare(
       `INSERT INTO zalo_logs (webhook_log_id, phone, template_id, template_data, zalo_response, status, sent_at)
@@ -257,7 +265,7 @@ webhook.post('/shopify', async (c) => {
     if (zaloResult.error === 0) {
       addServerLog('info', `Zalo message sent successfully to ${phone} for order ${order.name}`, 'webhook');
     } else {
-      addServerLog('error', `Zalo message failed to ${phone}: ${zaloResult.message}`, 'webhook');
+      addServerLog('error', `Zalo message failed to ${phone}: [${zaloResult.error}] ${zaloResult.message}`, 'webhook');
     }
 
     return c.json({
