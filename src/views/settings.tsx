@@ -219,16 +219,16 @@ export const SettingsView: FC<SettingsViewProps> = (props) => {
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">
-                  Zalo App Secret
+                  Zalo Access Token
                 </label>
                 <input
                   type="password"
-                  name="zalo_app_secret"
+                  name="zalo_access_token"
                   placeholder="•••••••• (hidden for security)"
                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
                 />
                 <p class="mt-1 text-xs text-gray-500">
-                  Used to automatically obtain access tokens. Leave empty to keep current value.
+                  Get your access token from the Zalo Official Account Dashboard. Leave empty to keep current value.
                 </p>
               </div>
               <div>
@@ -260,8 +260,8 @@ export const SettingsView: FC<SettingsViewProps> = (props) => {
                 </div>
                 <p class="text-xs text-gray-500 mt-1">
                   {props.appConfig.hasZaloTokens
-                    ? 'Your Zalo account is connected and tokens are managed automatically'
-                    : 'Click "Connect with Zalo" to authorize your account'}
+                    ? 'Your Zalo account is connected'
+                    : 'Enter your Access Token from Zalo OA Dashboard'}
                 </p>
               </div>
 
@@ -271,30 +271,31 @@ export const SettingsView: FC<SettingsViewProps> = (props) => {
                   type="submit"
                   class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
                 >
-                  Save Settings
+                  Save Zalo Settings
                 </button>
                 <button
                   type="button"
-                  hx-get="/admin/api/zalo/auth-url"
+                  hx-post="/admin/api/test-zalo"
                   hx-target="#zalo-config-result"
                   hx-swap="innerHTML"
                   class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium"
                 >
-                  {props.appConfig.hasZaloTokens ? 'Reconnect Zalo' : 'Connect with Zalo'}
+                  Test Connection
                 </button>
-                {props.appConfig.hasZaloTokens && (
-                  <button
-                    type="button"
-                    hx-post="/admin/api/zalo/refresh-token"
-                    hx-target="#zalo-config-result"
-                    hx-swap="innerHTML"
-                    class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium"
-                  >
-                    Refresh Token
-                  </button>
-                )}
               </div>
             </form>
+
+            {/* Instructions */}
+            <div class="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <h4 class="text-sm font-medium text-blue-900 mb-2">How to get your Zalo Access Token:</h4>
+              <ol class="text-xs text-blue-800 space-y-1 list-decimal list-inside">
+                <li>Go to <a href="https://oa.zalo.me" target="_blank" class="underline">Zalo Official Account Dashboard</a></li>
+                <li>Select your Official Account</li>
+                <li>Go to Settings {'>'} Account {'>'} API Management</li>
+                <li>Copy the Access Token</li>
+                <li>Paste it in the field above and click Save</li>
+              </ol>
+            </div>
           </Card>
 
           {/* Message Configuration */}
@@ -567,18 +568,6 @@ export const SettingsView: FC<SettingsViewProps> = (props) => {
           {/* Connection & Testing */}
           <Card title="Connection & Testing">
             <div class="space-y-4">
-              <div class="flex flex-wrap gap-2">
-                <button
-                  hx-post="/admin/api/test-zalo"
-                  hx-target="#zalo-test-result"
-                  hx-swap="innerHTML"
-                  class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm font-medium"
-                >
-                  Test Zalo Connection
-                </button>
-              </div>
-              <div id="zalo-test-result"></div>
-
               <div class="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                 <h4 class="text-sm font-medium text-blue-900 mb-2">Send Test Message</h4>
                 <form
