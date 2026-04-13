@@ -273,17 +273,15 @@ export const SettingsView: FC<SettingsViewProps> = (props) => {
                 >
                   Save Settings
                 </button>
-                {!props.appConfig.hasZaloTokens && (
-                  <button
-                    type="button"
-                    hx-get="/admin/api/zalo/auth-url"
-                    hx-target="#zalo-config-result"
-                    hx-swap="innerHTML"
-                    class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium"
-                  >
-                    Connect with Zalo
-                  </button>
-                )}
+                <button
+                  type="button"
+                  hx-get="/admin/api/zalo/auth-url"
+                  hx-target="#zalo-config-result"
+                  hx-swap="innerHTML"
+                  class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium"
+                >
+                  {props.appConfig.hasZaloTokens ? 'Reconnect Zalo' : 'Connect with Zalo'}
+                </button>
                 {props.appConfig.hasZaloTokens && (
                   <button
                     type="button"

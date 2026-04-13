@@ -243,7 +243,7 @@ admin.get('/settings', async (c) => {
         zalo_app_id: appSettings.zalo_app_id,
         zalo_oa_id: appSettings.zalo_oa_id,
         zalo_template_id: appSettings.zalo_template_id,
-        hasZaloTokens: !!appSettings.zalo_access_token && appSettings.zalo_access_token.length > 0,
+        hasZaloTokens: !!(appSettings.zalo_access_token && appSettings.zalo_access_token.length > 0 && appSettings.zalo_access_token !== ''),
       }}
       mappings={mappings}
       isFirstTimeSetup={!hasPassword}
