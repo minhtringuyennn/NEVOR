@@ -165,7 +165,7 @@ webhook.post('/shopify', async (c) => {
     shopifyService.formatOrderSummary(order, config);
 
     // Send Zalo message
-    const zaloService = new ZaloService(zaloAppId, zaloAccessToken, zaloOaId);
+    const zaloService = new ZaloService(zaloAccessToken, settings.zalo_refresh_token, settingsService);
 
     // Get field mappings from database
     const mappingsResult = await c.env.DB.prepare(

@@ -9,7 +9,7 @@ const encoder = new TextEncoder();
  */
 export async function hashPassword(password: string): Promise<string> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  
+
   // Import password as key material
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
@@ -18,7 +18,7 @@ export async function hashPassword(password: string): Promise<string> {
     false,
     ['deriveBits']
   );
-  
+
   // Derive bits directly (not a key, so we can get the raw bytes)
   const derivedBits = await crypto.subtle.deriveBits(
     {
@@ -30,14 +30,14 @@ export async function hashPassword(password: string): Promise<string> {
     keyMaterial,
     256 // 32 bytes
   );
-  
+
   const hashBytes = new Uint8Array(derivedBits);
-  
+
   // Combine salt + hash and encode to base64
   const combined = new Uint8Array(salt.length + hashBytes.length);
   combined.set(salt);
   combined.set(hashBytes, salt.length);
-  
+
   // Convert to base64
   const base64 = btoa(String.fromCharCode(...combined));
   return base64;
@@ -52,7 +52,7 @@ export async function verifyPassword(password: string, hashBase64: string): Prom
     const combined = Uint8Array.from(atob(hashBase64), c => c.charCodeAt(0));
     const salt = combined.slice(0, 16);
     const originalHash = combined.slice(16);
-    
+
     // Import password as key material
     const keyMaterial = await crypto.subtle.importKey(
       'raw',
@@ -61,7 +61,7 @@ export async function verifyPassword(password: string, hashBase64: string): Prom
       false,
       ['deriveBits']
     );
-    
+
     // Derive bits with same salt
     const derivedBits = await crypto.subtle.deriveBits(
       {
@@ -73,9 +73,9 @@ export async function verifyPassword(password: string, hashBase64: string): Prom
       keyMaterial,
       256
     );
-    
+
     const newHash = new Uint8Array(derivedBits);
-    
+
     // Constant time comparison
     if (originalHash.length !== newHash.length) return false;
     let equal = true;
@@ -93,6 +93,15 @@ export interface AppSettings {
   shopify_shop_domain: string;
   zalo_app_id: string;
   zalo_access_token: string;
+  zalo_refresh_token: string;
+  zalo_oa_id: string;
+  zalo_template_id: string;
+}
+
+// Public-safe settings (no secrets exposed)
+export interface PublicAppConfig {
+  shopify_shop_domain: string;
+  zalo_app_id: string;
   zalo_oa_id: string;
   zalo_template_id: string;
 }
@@ -153,6 +162,7 @@ export class SettingsService {
       'shopify_shop_domain',
       'zalo_app_id',
       'zalo_access_token',
+      'zalo_refresh_token',
       'zalo_oa_id',
       'zalo_template_id',
     ];
@@ -169,5 +179,52 @@ export class SettingsService {
     const webhookSecret = await this.get('shopify_webhook_secret');
     const zaloToken = await this.get('zalo_access_token');
     return !!hash && hash.length > 0 && !!webhookSecret && webhookSecret.length > 0 && !!zaloToken && zaloToken.length > 0;
+  }
+
+  /**
+   * Refresh Zalo access token using refresh token
+   * Returns true if token was refreshed successfully
+   */
+  async refreshZaloToken(): Promise<boolean> {
+    const refreshToken = await this.get('zalo_refresh_token');
+    const appId = await this.get('zalo_app_id');
+    const appSecret = await this.get('zalo_app_secret');
+
+    if (!refreshToken || !appId || !appSecret) {
+      console.error('Missing required credentials for token refresh');
+      return false;
+    }
+
+    try {
+      const response = await fetch('https://oauth.zaloapp.com/v4/access_token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'secret_key': appSecret,
+        },
+        body: new URLSearchParams({
+          refresh_token: refreshToken,
+          app_id: appId,
+          grant_type: 'refresh_token',
+        }),
+      });
+
+      const data: { access_token?: string; refresh_token?: string } = await response.json();
+
+      if (data.access_token) {
+        await this.set('zalo_access_token', data.access_token);
+        if (data.refresh_token) {
+          await this.set('zalo_refresh_token', data.refresh_token);
+        }
+        console.log('Zalo access token refreshed successfully');
+        return true;
+      } else {
+        console.error('Failed to refresh Zalo token:', data);
+        return false;
+      }
+    } catch (error) {
+      console.error('Error refreshing Zalo token:', error);
+      return false;
+    }
   }
 }

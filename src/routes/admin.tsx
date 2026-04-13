@@ -243,6 +243,7 @@ admin.get('/settings', async (c) => {
         zalo_app_id: appSettings.zalo_app_id,
         zalo_oa_id: appSettings.zalo_oa_id,
         zalo_template_id: appSettings.zalo_template_id,
+        hasZaloTokens: !!appSettings.zalo_access_token && appSettings.zalo_access_token.length > 0,
       }}
       mappings={mappings}
       isFirstTimeSetup={!hasPassword}
@@ -324,8 +325,8 @@ admin.post('/api/settings/zalo', async (c) => {
     if (formData.zalo_template_id) {
       updates.zalo_template_id = formData.zalo_template_id as string;
     }
-    if (formData.zalo_access_token) {
-      updates.zalo_access_token = formData.zalo_access_token as string;
+    if (formData.zalo_app_secret) {
+      updates.zalo_app_secret = formData.zalo_app_secret as string;
     }
 
     if (Object.keys(updates).length > 0) {
@@ -336,6 +337,25 @@ admin.post('/api/settings/zalo', async (c) => {
   } catch (error) {
     console.error('Save Zalo settings error:', error);
     return c.html(<Alert type="error" message={`Failed to save settings: ${error instanceof Error ? error.message : 'Unknown error'}`} />);
+  }
+});
+
+/**
+ * Refresh Zalo Token - POST /admin/api/zalo/refresh-token
+ */
+admin.post('/api/zalo/refresh-token', async (c) => {
+  try {
+    const settingsService = new SettingsService(c.env.DB);
+    const success = await settingsService.refreshZaloToken();
+
+    if (success) {
+      return c.html(<Alert type="success" message="✓ Zalo access token refreshed successfully!" />);
+    } else {
+      return c.html(<Alert type="error" message="✗ Failed to refresh token. Please check your App ID, App Secret, and Refresh Token are configured correctly." />);
+    }
+  } catch (error) {
+    console.error('Refresh Zalo token error:', error);
+    return c.html(<Alert type="error" message={`Error: ${error instanceof Error ? error.message : 'Unknown error'}`} />);
   }
 });
 
@@ -373,9 +393,9 @@ admin.post('/api/test-zalo', async (c) => {
     const settings = await settingsService.getAllSettings();
 
     const zaloService = new ZaloService(
-      settings.zalo_app_id,
       settings.zalo_access_token,
-      settings.zalo_oa_id
+      settings.zalo_refresh_token,
+      settingsService
     );
 
     const result = await zaloService.testConnection();
@@ -400,9 +420,9 @@ admin.get('/api/template-info', async (c) => {
     const settings = await settingsService.getAllSettings();
 
     const zaloService = new ZaloService(
-      settings.zalo_app_id,
       settings.zalo_access_token,
-      settings.zalo_oa_id
+      settings.zalo_refresh_token,
+      settingsService
     );
 
     const templateInfo = await zaloService.getTemplateInfo(settings.zalo_template_id);
@@ -434,9 +454,9 @@ admin.get('/api/templates-refresh', async (c) => {
     const settings = await settingsService.getAllSettings();
 
     const zaloService = new ZaloService(
-      settings.zalo_app_id,
       settings.zalo_access_token,
-      settings.zalo_oa_id
+      settings.zalo_refresh_token,
+      settingsService
     );
 
     const result = await zaloService.listAllTemplates(0, 100);
@@ -494,9 +514,9 @@ admin.get('/api/templates/:id', async (c) => {
     const settings = await settingsService.getAllSettings();
 
     const zaloService = new ZaloService(
-      settings.zalo_app_id,
       settings.zalo_access_token,
-      settings.zalo_oa_id
+      settings.zalo_refresh_token,
+      settingsService
     );
 
     const result = await zaloService.getTemplateInfo(templateId);
@@ -606,9 +626,9 @@ admin.post('/api/test-send', async (c) => {
     const settings = await settingsService.getAllSettings();
 
     const zaloService = new ZaloService(
-      settings.zalo_app_id,
       settings.zalo_access_token,
-      settings.zalo_oa_id
+      settings.zalo_refresh_token,
+      settingsService
     );
 
     // Get field mappings from database

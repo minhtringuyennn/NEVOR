@@ -35,6 +35,7 @@ interface AppConfig {
   zalo_app_id: string;
   zalo_oa_id: string;
   zalo_template_id: string;
+  hasZaloTokens: boolean;
 }
 
 interface SettingsViewProps {
@@ -218,15 +219,17 @@ export const SettingsView: FC<SettingsViewProps> = (props) => {
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">
-                  Zalo Access Token
+                  Zalo App Secret
                 </label>
                 <input
                   type="password"
-                  name="zalo_access_token"
+                  name="zalo_app_secret"
                   placeholder="•••••••• (hidden for security)"
                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
                 />
-                <p class="mt-1 text-xs text-gray-500">Leave empty to keep current value</p>
+                <p class="mt-1 text-xs text-gray-500">
+                  Used to automatically obtain access tokens. Leave empty to keep current value.
+                </p>
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">
@@ -240,13 +243,44 @@ export const SettingsView: FC<SettingsViewProps> = (props) => {
                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
+
+              {/* Token Status */}
+              <div class="p-3 bg-gray-50 rounded-lg">
+                <div class="flex items-center justify-between">
+                  <span class="text-sm font-medium text-gray-700">Access Token Status:</span>
+                  {props.appConfig.hasZaloTokens ? (
+                    <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">
+                      Configured
+                    </span>
+                  ) : (
+                    <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
+                      Not Configured
+                    </span>
+                  )}
+                </div>
+                <p class="text-xs text-gray-500 mt-1">
+                  Tokens are managed automatically using your App Secret
+                </p>
+              </div>
+
               <div id="zalo-config-result"></div>
-              <button
-                type="submit"
-                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
-              >
-                Save Zalo Settings
-              </button>
+              <div class="flex flex-wrap gap-2">
+                <button
+                  type="submit"
+                  class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
+                >
+                  Save Zalo Settings
+                </button>
+                <button
+                  type="button"
+                  hx-post="/admin/api/zalo/refresh-token"
+                  hx-target="#zalo-config-result"
+                  hx-swap="innerHTML"
+                  class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium"
+                >
+                  Refresh Token Now
+                </button>
+              </div>
             </form>
           </Card>
 

@@ -1,4 +1,4 @@
-// Zalo ZBS API service
+// Zalo ZBS API service with automatic token refresh
 
 import type {
   ZaloTemplateData,
@@ -8,17 +8,64 @@ import type {
   ZaloTemplateList,
   ZaloQuota,
 } from '../types/zalo';
+import { SettingsService } from './settings';
 
 export class ZaloService {
-  private appId: string;
   private accessToken: string;
-  private oaId: string;
+  private refreshTokenValue?: string;
+  private settingsService?: SettingsService;
   private baseUrl = 'https://business.openapi.zalo.me';
 
-  constructor(appId: string, accessToken: string, oaId: string) {
-    this.appId = appId;
+  constructor(accessToken: string, refreshToken?: string, settingsService?: SettingsService) {
     this.accessToken = accessToken;
-    this.oaId = oaId;
+    this.refreshTokenValue = refreshToken;
+    this.settingsService = settingsService;
+  }
+
+  /**
+   * Refresh access token using refresh token
+   */
+  private async doRefreshToken(): Promise<boolean> {
+    if (!this.settingsService) {
+      console.error('SettingsService not available for token refresh');
+      return false;
+    }
+
+    return await this.settingsService.refreshZaloToken();
+  }
+
+  /**
+   * Make API request with automatic token refresh on 401
+   */
+  private async makeRequest<T>(
+    url: string,
+    options: RequestInit,
+    retryCount: number = 1
+  ): Promise<T> {
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        ...options.headers,
+        access_token: this.accessToken,
+      },
+    });
+
+    // If unauthorized and we have refresh capability, try to refresh
+    if (response.status === 401 && retryCount > 0 && this.refreshTokenValue) {
+      console.log('Access token expired, attempting refresh...');
+      const refreshed = await this.doRefreshToken();
+      if (refreshed) {
+        // Get new token from settings
+        const newToken = await this.settingsService?.get('zalo_access_token');
+        if (newToken) {
+          this.accessToken = newToken;
+          // Retry the request
+          return this.makeRequest(url, options, retryCount - 1);
+        }
+      }
+    }
+
+    return response.json() as Promise<T>;
   }
 
   /**
@@ -33,23 +80,23 @@ export class ZaloService {
     templateData: ZaloTemplateData
   ): Promise<ZaloSendMessageResponse> {
     try {
-      const response = await fetch(`${this.baseUrl}/message/template`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          access_token: this.accessToken,
-        },
-        body: JSON.stringify({
-          phone: phone,
-          template_id: templateId,
-          template_data: templateData,
-          tracking_id: `${Date.now()}`,
-        }),
-      });
+      const result = await this.makeRequest<ZaloSendMessageResponse>(
+        `${this.baseUrl}/message/template`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            phone: phone,
+            template_id: templateId,
+            template_data: templateData,
+            tracking_id: `${Date.now()}`,
+          }),
+        }
+      );
 
-      const result: ZaloSendMessageResponse = await response.json();
-
-      if (!response.ok || result.error !== 0) {
+      if (result.error !== 0) {
         console.error('Zalo API error:', result);
       }
 
@@ -108,14 +155,12 @@ export class ZaloService {
    */
   async getOAProfile(): Promise<ZaloOAProfile> {
     try {
-      const response = await fetch(`${this.baseUrl}/oa/getoa`, {
-        method: 'GET',
-        headers: {
-          access_token: this.accessToken,
-        },
-      });
-
-      const result: ZaloOAProfile = await response.json();
+      const result = await this.makeRequest<ZaloOAProfile>(
+        `${this.baseUrl}/oa/getoa`,
+        {
+          method: 'GET',
+        }
+      );
       return result;
     } catch (error) {
       console.error('Zalo get OA profile error:', error);
@@ -131,17 +176,12 @@ export class ZaloService {
    */
   async getTemplateInfo(templateId: string): Promise<ZaloTemplateInfo> {
     try {
-      const response = await fetch(
+      const result = await this.makeRequest<ZaloTemplateInfo>(
         `${this.baseUrl}/template/info?template_id=${templateId}`,
         {
           method: 'GET',
-          headers: {
-            access_token: this.accessToken,
-          },
         }
       );
-
-      const result: ZaloTemplateInfo = await response.json();
       return result;
     } catch (error) {
       console.error('Zalo get template info error:', error);
@@ -157,14 +197,12 @@ export class ZaloService {
    */
   async getQuota(): Promise<ZaloQuota> {
     try {
-      const response = await fetch(`${this.baseUrl}/message/quota`, {
-        method: 'GET',
-        headers: {
-          access_token: this.accessToken,
-        },
-      });
-
-      const result: ZaloQuota = await response.json();
+      const result = await this.makeRequest<ZaloQuota>(
+        `${this.baseUrl}/message/quota`,
+        {
+          method: 'GET',
+        }
+      );
       return result;
     } catch (error) {
       console.error('Zalo get quota error:', error);
@@ -192,14 +230,12 @@ export class ZaloService {
         url += `&status=${status}`;
       }
 
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          access_token: this.accessToken,
-        },
-      });
-
-      const result: ZaloTemplateList = await response.json();
+      const result = await this.makeRequest<ZaloTemplateList>(
+        url,
+        {
+          method: 'GET',
+        }
+      );
       return result;
     } catch (error) {
       console.error('Zalo list templates error:', error);

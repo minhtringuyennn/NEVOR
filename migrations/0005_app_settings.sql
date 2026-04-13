@@ -16,9 +16,11 @@ INSERT INTO app_settings (key, value, is_secret) VALUES
   -- Shopify settings
   ('shopify_webhook_secret', '', 1),
   ('shopify_shop_domain', '', 0),
-  -- Zalo settings
+  -- Zalo settings (user only provides app_id and app_secret, we handle tokens)
   ('zalo_app_id', '', 0),
-  ('zalo_access_token', '', 1),
+  ('zalo_app_secret', '', 1),
+  ('zalo_access_token', '', 1),  -- Managed internally
+  ('zalo_refresh_token', '', 1), -- Managed internally
   ('zalo_oa_id', '', 0),
   ('zalo_template_id', '', 0)
 ON CONFLICT(key) DO NOTHING;
