@@ -5,6 +5,7 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import webhook from './routes/webhook';
 import admin from './routes/admin';
+import { SettingsService } from './services/settings';
 
 type Bindings = {
   DB: D1Database;
@@ -63,4 +64,47 @@ app.onError((err, c) => {
   );
 });
 
-export default app;
+// Export the Hono app for normal requests
+export default {
+  // HTTP request handler
+  fetch: app.fetch,
+
+  // Cron trigger handler for scheduled tasks
+  async scheduled(
+    controller: ScheduledController,
+    env: Bindings,
+    ctx: ExecutionContext
+  ): Promise<void> {
+    console.log(`Cron job triggered at ${new Date().toISOString()}`);
+    console.log(`Cron pattern: ${controller.cron}`);
+
+    // Handle periodic token refresh
+    if (controller.cron === '0 3 * * *') {
+      console.log('Running daily Zalo token refresh...');
+
+      try {
+        const settingsService = new SettingsService(env.DB);
+
+        // Check if we have refresh token configured
+        const refreshToken = await settingsService.get('zalo_refresh_token');
+        if (!refreshToken) {
+          console.log('No refresh token configured, skipping auto-refresh');
+          return;
+        }
+
+        // Attempt to refresh the token
+        const success = await settingsService.refreshZaloToken();
+
+        if (success) {
+          console.log('✓ Zalo token refreshed successfully via cron job');
+        } else {
+          console.error('✗ Failed to refresh Zalo token via cron job');
+        }
+      } catch (error) {
+        console.error('Error in scheduled token refresh:', error);
+      }
+    }
+
+    console.log('Cron job completed');
+  },
+};

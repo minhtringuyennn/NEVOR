@@ -16,3 +16,8 @@ database_id = "5241ff9f-2a2d-4b50-a506-002d73be91d7"
 [observability.logs]
 enabled = true
 invocation_logs = true
+
+# Cron triggers for periodic tasks
+# Refresh Zalo tokens daily at 3 AM UTC
+[[triggers]]
+crons = ["0 3 * * *"]
