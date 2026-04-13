@@ -247,19 +247,21 @@ export const SettingsView: FC<SettingsViewProps> = (props) => {
               {/* Token Status */}
               <div class="p-3 bg-gray-50 rounded-lg">
                 <div class="flex items-center justify-between">
-                  <span class="text-sm font-medium text-gray-700">Access Token Status:</span>
+                  <span class="text-sm font-medium text-gray-700">Connection Status:</span>
                   {props.appConfig.hasZaloTokens ? (
                     <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">
-                      Configured
+                      Connected
                     </span>
                   ) : (
                     <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
-                      Not Configured
+                      Not Connected
                     </span>
                   )}
                 </div>
                 <p class="text-xs text-gray-500 mt-1">
-                  Tokens are managed automatically using your App Secret
+                  {props.appConfig.hasZaloTokens
+                    ? 'Your Zalo account is connected and tokens are managed automatically'
+                    : 'Click "Connect with Zalo" to authorize your account'}
                 </p>
               </div>
 
@@ -269,17 +271,30 @@ export const SettingsView: FC<SettingsViewProps> = (props) => {
                   type="submit"
                   class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
                 >
-                  Save Zalo Settings
+                  Save Settings
                 </button>
-                <button
-                  type="button"
-                  hx-post="/admin/api/zalo/refresh-token"
-                  hx-target="#zalo-config-result"
-                  hx-swap="innerHTML"
-                  class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium"
-                >
-                  Refresh Token Now
-                </button>
+                {!props.appConfig.hasZaloTokens && (
+                  <button
+                    type="button"
+                    hx-get="/admin/api/zalo/auth-url"
+                    hx-target="#zalo-config-result"
+                    hx-swap="innerHTML"
+                    class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium"
+                  >
+                    Connect with Zalo
+                  </button>
+                )}
+                {props.appConfig.hasZaloTokens && (
+                  <button
+                    type="button"
+                    hx-post="/admin/api/zalo/refresh-token"
+                    hx-target="#zalo-config-result"
+                    hx-swap="innerHTML"
+                    class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium"
+                  >
+                    Refresh Token
+                  </button>
+                )}
               </div>
             </form>
           </Card>

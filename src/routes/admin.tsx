@@ -360,6 +360,152 @@ admin.post('/api/zalo/refresh-token', async (c) => {
 });
 
 /**
+ * Get Zalo OAuth URL - GET /admin/api/zalo/auth-url
+ * Returns the OAuth URL for user to connect their Zalo account
+ */
+admin.get('/api/zalo/auth-url', async (c) => {
+  try {
+    const settingsService = new SettingsService(c.env.DB);
+    const appId = await settingsService.get('zalo_app_id');
+    const appSecret = await settingsService.get('zalo_app_secret');
+
+    if (!appId || !appSecret) {
+      return c.html(<Alert type="error" message="Please configure Zalo App ID and App Secret first." />);
+    }
+
+    // Build the OAuth URL
+    const redirectUri = `${new URL(c.req.url).origin}/admin/api/zalo/callback`;
+    const state = crypto.randomUUID(); // Generate random state for security
+
+    // Store state temporarily (in a real app, use a session or short-lived cache)
+    await settingsService.set('zalo_oauth_state', state);
+
+    const authUrl = `https://oauth.zaloapp.com/v4/permission?` +
+      `app_id=${encodeURIComponent(appId)}&` +
+      `redirect_uri=${encodeURIComponent(redirectUri)}&` +
+      `state=${encodeURIComponent(state)}`;
+
+    return c.html(
+      <div>
+        <Alert type="info" message="Click the link below to authorize with Zalo:" />
+        <a
+          href={authUrl}
+          target="_blank"
+          class="mt-2 inline-block px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+        >
+          Connect with Zalo
+        </a>
+      </div>
+    );
+  } catch (error) {
+    console.error('Get Zalo auth URL error:', error);
+    return c.html(<Alert type="error" message={`Error: ${error instanceof Error ? error.message : 'Unknown error'}`} />);
+  }
+});
+
+/**
+ * Zalo OAuth Callback - GET /admin/api/zalo/callback
+ * Handles the OAuth callback from Zalo
+ */
+admin.get('/api/zalo/callback', async (c) => {
+  try {
+    const settingsService = new SettingsService(c.env.DB);
+    const appId = await settingsService.get('zalo_app_id');
+    const appSecret = await settingsService.get('zalo_app_secret');
+    const storedState = await settingsService.get('zalo_oauth_state');
+
+    if (!appId || !appSecret) {
+      return c.html(<Alert type="error" message="Zalo App ID or App Secret not configured." />);
+    }
+
+    // Get query parameters
+    const code = c.req.query('code');
+    const state = c.req.query('state');
+    const error = c.req.query('error');
+    const errorMessage = c.req.query('error_message');
+
+    // Check for OAuth errors
+    if (error) {
+      return c.html(<Alert type="error" message={`Zalo OAuth error: ${errorMessage || error}`} />);
+    }
+
+    if (!code) {
+      return c.html(<Alert type="error" message="No authorization code received from Zalo." />);
+    }
+
+    // Verify state to prevent CSRF
+    if (state !== storedState) {
+      return c.html(<Alert type="error" message="Invalid state parameter. Security check failed." />);
+    }
+
+    // Exchange code for access token
+    const redirectUri = `${new URL(c.req.url).origin}/admin/api/zalo/callback`;
+
+    const tokenResponse = await fetch('https://oauth.zaloapp.com/v4/access_token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'secret_key': appSecret,
+      },
+      body: new URLSearchParams({
+        code: code,
+        app_id: appId,
+        grant_type: 'authorization_code',
+        redirect_uri: redirectUri,
+      }),
+    });
+
+    const tokenData: {
+      access_token?: string;
+      refresh_token?: string;
+      expires_in?: number;
+      error?: string;
+      error_name?: string;
+    } = await tokenResponse.json();
+
+    if (tokenData.error) {
+      return c.html(<Alert type="error" message={`Token exchange failed: ${tokenData.error_name || tokenData.error}`} />);
+    }
+
+    if (!tokenData.access_token) {
+      return c.html(<Alert type="error" message="No access token received from Zalo." />);
+    }
+
+    // Store the tokens
+    await settingsService.set('zalo_access_token', tokenData.access_token);
+    if (tokenData.refresh_token) {
+      await settingsService.set('zalo_refresh_token', tokenData.refresh_token);
+    }
+
+    // Clear the state
+    await settingsService.set('zalo_oauth_state', '');
+
+    return c.html(
+      <Layout title="Zalo Connected" activePage="settings">
+        <div class="px-4 py-8 text-center">
+          <div class="mb-4">
+            <svg class="w-16 h-16 mx-auto text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <h1 class="text-2xl font-bold text-gray-900 mb-2">Successfully Connected!</h1>
+          <p class="text-gray-600 mb-6">Your Zalo account has been connected successfully.</p>
+          <a
+            href="/admin/settings"
+            class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+          >
+            Return to Settings
+          </a>
+        </div>
+      </Layout>
+    );
+  } catch (error) {
+    console.error('Zalo OAuth callback error:', error);
+    return c.html(<Alert type="error" message={`Error: ${error instanceof Error ? error.message : 'Unknown error'}`} />);
+  }
+});
+
+/**
  * Save Message Config - POST /admin/api/settings/message-config
  */
 admin.post('/api/settings/message-config', async (c) => {
