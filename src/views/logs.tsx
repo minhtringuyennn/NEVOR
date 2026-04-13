@@ -245,9 +245,26 @@ export const LogsView: FC<LogsViewProps> = (props) => {
                           <span class="text-xs font-medium">Phone: {zaloLog.phone}</span>
                           <StatusBadge status={zaloLog.status} />
                         </div>
-                        <pre class="text-xs text-gray-700">
-                          {JSON.stringify(JSON.parse(zaloLog.template_data), null, 2)}
-                        </pre>
+                        <div class="mb-2">
+                          <p class="text-xs font-medium text-gray-500 mb-1">Template Data:</p>
+                          <pre class="text-xs text-gray-700 bg-white p-2 rounded border border-gray-200 overflow-x-auto">
+                            {JSON.stringify(JSON.parse(zaloLog.template_data), null, 2)}
+                          </pre>
+                        </div>
+                        {zaloLog.zalo_response && (
+                          <div>
+                            <p class="text-xs font-medium text-gray-500 mb-1">Zalo API Response:</p>
+                            <pre class={`text-xs p-2 rounded overflow-x-auto ${zaloLog.status === 'failed' ? 'bg-red-50 text-red-800 border border-red-200' : 'bg-green-50 text-green-800 border border-green-200'}`}>
+                              {(() => {
+                                try {
+                                  return JSON.stringify(JSON.parse(zaloLog.zalo_response), null, 2);
+                                } catch {
+                                  return zaloLog.zalo_response;
+                                }
+                              })()}
+                            </pre>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
