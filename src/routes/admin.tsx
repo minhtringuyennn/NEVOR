@@ -328,6 +328,9 @@ admin.post('/api/settings/zalo', async (c) => {
     if (formData.zalo_access_token) {
       updates.zalo_access_token = formData.zalo_access_token as string;
     }
+    if (formData.zalo_refresh_token) {
+      updates.zalo_refresh_token = formData.zalo_refresh_token as string;
+    }
 
     if (Object.keys(updates).length > 0) {
       await settingsService.setMany(updates);
@@ -337,6 +340,25 @@ admin.post('/api/settings/zalo', async (c) => {
   } catch (error) {
     console.error('Save Zalo settings error:', error);
     return c.html(<Alert type="error" message={`Failed to save settings: ${error instanceof Error ? error.message : 'Unknown error'}`} />);
+  }
+});
+
+/**
+ * Refresh Zalo Token - POST /admin/api/zalo/refresh-token
+ */
+admin.post('/api/zalo/refresh-token', async (c) => {
+  try {
+    const settingsService = new SettingsService(c.env.DB);
+    const success = await settingsService.refreshZaloToken();
+
+    if (success) {
+      return c.html(<Alert type="success" message="✓ Zalo access token refreshed successfully!" />);
+    } else {
+      return c.html(<Alert type="error" message="✗ Failed to refresh token. Please check your App ID, App Secret, and Refresh Token are configured correctly." />);
+    }
+  } catch (error) {
+    console.error('Refresh Zalo token error:', error);
+    return c.html(<Alert type="error" message={`Error: ${error instanceof Error ? error.message : 'Unknown error'}`} />);
   }
 });
 

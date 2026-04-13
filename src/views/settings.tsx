@@ -228,7 +228,21 @@ export const SettingsView: FC<SettingsViewProps> = (props) => {
                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
                 />
                 <p class="mt-1 text-xs text-gray-500">
-                  Get your access token from the Zalo Official Account Dashboard. Leave empty to keep current value.
+                  Get from Zalo OA Dashboard. Leave empty to keep current value.
+                </p>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">
+                  Zalo Refresh Token
+                </label>
+                <input
+                  type="password"
+                  name="zalo_refresh_token"
+                  placeholder="•••••••• (hidden for security)"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                />
+                <p class="mt-1 text-xs text-gray-500">
+                  Also from Zalo OA Dashboard. Used to automatically refresh expired access tokens.
                 </p>
               </div>
               <div>
@@ -260,8 +274,8 @@ export const SettingsView: FC<SettingsViewProps> = (props) => {
                 </div>
                 <p class="text-xs text-gray-500 mt-1">
                   {props.appConfig.hasZaloTokens
-                    ? 'Your Zalo account is connected'
-                    : 'Enter your Access Token from Zalo OA Dashboard'}
+                    ? 'Your Zalo account is connected. Tokens auto-refresh when expired.'
+                    : 'Enter your Access Token and Refresh Token from Zalo OA Dashboard'}
                 </p>
               </div>
 
@@ -282,19 +296,33 @@ export const SettingsView: FC<SettingsViewProps> = (props) => {
                 >
                   Test Connection
                 </button>
+                {props.appConfig.hasZaloTokens && (
+                  <button
+                    type="button"
+                    hx-post="/admin/api/zalo/refresh-token"
+                    hx-target="#zalo-config-result"
+                    hx-swap="innerHTML"
+                    class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium"
+                  >
+                    Refresh Token Now
+                  </button>
+                )}
               </div>
             </form>
 
             {/* Instructions */}
             <div class="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <h4 class="text-sm font-medium text-blue-900 mb-2">How to get your Zalo Access Token:</h4>
+              <h4 class="text-sm font-medium text-blue-900 mb-2">How to get your Zalo Tokens:</h4>
               <ol class="text-xs text-blue-800 space-y-1 list-decimal list-inside">
                 <li>Go to <a href="https://oa.zalo.me" target="_blank" class="underline">Zalo Official Account Dashboard</a></li>
                 <li>Select your Official Account</li>
                 <li>Go to Settings {'>'} Account {'>'} API Management</li>
-                <li>Copy the Access Token</li>
-                <li>Paste it in the field above and click Save</li>
+                <li>Copy both the Access Token and Refresh Token</li>
+                <li>Paste them in the fields above and click Save</li>
               </ol>
+              <p class="text-xs text-blue-700 mt-2">
+                <strong>Note:</strong> The system will automatically refresh expired access tokens using the refresh token.
+              </p>
             </div>
           </Card>
 
