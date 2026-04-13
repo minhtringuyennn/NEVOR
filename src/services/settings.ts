@@ -3,15 +3,24 @@
 
 const encoder = new TextEncoder();
 
-async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
+/**
+ * Hash password using PBKDF2 with SHA-256
+ * Returns base64 encoded string containing salt + hash
+ */
+export async function hashPassword(password: string): Promise<string> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  
+  // Import password as key material
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
     encoder.encode(password),
     { name: 'PBKDF2' },
     false,
-    ['deriveBits', 'deriveKey']
+    ['deriveBits']
   );
-  return crypto.subtle.deriveKey(
+  
+  // Derive bits directly (not a key, so we can get the raw bytes)
+  const derivedBits = await crypto.subtle.deriveBits(
     {
       name: 'PBKDF2',
       salt,
@@ -19,33 +28,55 @@ async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey>
       hash: 'SHA-256',
     },
     keyMaterial,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt']
+    256 // 32 bytes
   );
-}
-
-export async function hashPassword(password: string): Promise<string> {
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const key = await deriveKey(password, salt);
-  // Export key bytes for hashing
-  const rawKey = await crypto.subtle.exportKey('raw', key);
-  const hashBytes = new Uint8Array(rawKey as ArrayBuffer);
+  
+  const hashBytes = new Uint8Array(derivedBits);
+  
   // Combine salt + hash and encode to base64
   const combined = new Uint8Array(salt.length + hashBytes.length);
   combined.set(salt);
   combined.set(hashBytes, salt.length);
-  return btoa(String.fromCharCode(...combined));
+  
+  // Convert to base64
+  const base64 = btoa(String.fromCharCode(...combined));
+  return base64;
 }
 
+/**
+ * Verify password against stored hash
+ */
 export async function verifyPassword(password: string, hashBase64: string): Promise<boolean> {
   try {
+    // Decode base64
     const combined = Uint8Array.from(atob(hashBase64), c => c.charCodeAt(0));
     const salt = combined.slice(0, 16);
     const originalHash = combined.slice(16);
-    const key = await deriveKey(password, salt);
-    const rawKey = await crypto.subtle.exportKey('raw', key);
-    const newHash = new Uint8Array(rawKey as ArrayBuffer);
+    
+    // Import password as key material
+    const keyMaterial = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(password),
+      { name: 'PBKDF2' },
+      false,
+      ['deriveBits']
+    );
+    
+    // Derive bits with same salt
+    const derivedBits = await crypto.subtle.deriveBits(
+      {
+        name: 'PBKDF2',
+        salt,
+        iterations: 100000,
+        hash: 'SHA-256',
+      },
+      keyMaterial,
+      256
+    );
+    
+    const newHash = new Uint8Array(derivedBits);
+    
+    // Constant time comparison
     if (originalHash.length !== newHash.length) return false;
     let equal = true;
     for (let i = 0; i < originalHash.length; i++) {
