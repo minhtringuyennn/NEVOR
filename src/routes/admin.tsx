@@ -4,20 +4,21 @@ import { Hono } from 'hono';
 import { getSignedCookie, setSignedCookie, deleteCookie } from 'hono/cookie';
 import { DatabaseService } from '../services/db';
 import { ZaloService } from '../services/zalo';
-import { DashboardView } from '../views/dashboard';
+import { SettingsService, hashPassword, verifyPassword } from '../services/settings';
 import { SettingsView } from '../views/settings';
 import { LogsView } from '../views/logs';
-import { FieldMappingsView } from '../views/field-mappings';
-import { TemplatesView } from '../views/templates';
 import { Alert, Layout } from '../views/layout';
 
 type Bindings = {
   DB: D1Database;
-  ADMIN_PASSWORD: string;
-  ZALO_APP_ID: string;
-  ZALO_ACCESS_TOKEN: string;
-  ZALO_OA_ID: string;
-  ZALO_TEMPLATE_ID: string;
+  // Keep these for initial setup, but they can be empty
+  ADMIN_PASSWORD?: string;
+  ZALO_APP_ID?: string;
+  ZALO_ACCESS_TOKEN?: string;
+  ZALO_OA_ID?: string;
+  ZALO_TEMPLATE_ID?: string;
+  SHOPIFY_WEBHOOK_SECRET?: string;
+  SHOPIFY_SHOP_DOMAIN?: string;
 };
 
 type Variables = {
@@ -104,10 +105,7 @@ const LoginView = ({ error }: { error?: string }) => (
 
 // Auth middleware - check if user is logged in
 admin.use('*', async (c, next) => {
-  const password = c.env.ADMIN_PASSWORD;
-  if (!password) {
-    return c.json({ error: 'ADMIN_PASSWORD not configured' }, 500);
-  }
+  const settingsService = new SettingsService(c.env.DB);
 
   // Check for session cookie
   const session = await getSignedCookie(c, COOKIE_SECRET, COOKIE_NAME);
@@ -142,7 +140,7 @@ admin.use('*', async (c, next) => {
 /**
  * Login Page - GET /admin/login
  */
-admin.get('/login', (c) => {
+admin.get('/login', async (c) => {
   if (c.get('isAuthenticated')) {
     return c.redirect('/admin');
   }
@@ -157,7 +155,18 @@ admin.post('/login', async (c) => {
   const username = formData.username as string;
   const password = formData.password as string;
 
-  if (username === 'admin' && password === c.env.ADMIN_PASSWORD) {
+  const settingsService = new SettingsService(c.env.DB);
+  const hasPassword = await settingsService.hasAdminPassword();
+
+  // If no password is set, allow login with env variable as fallback (for migration)
+  let isValid = false;
+  if (!hasPassword && c.env.ADMIN_PASSWORD) {
+    isValid = username === 'admin' && password === c.env.ADMIN_PASSWORD;
+  } else {
+    isValid = username === 'admin' && await settingsService.verifyAdminPassword(password);
+  }
+
+  if (isValid) {
     // Set session cookie
     await setSignedCookie(c, COOKIE_NAME, 'authenticated', COOKIE_SECRET, {
       path: '/admin',
@@ -193,27 +202,462 @@ admin.get('/logout', (c) => {
 });
 
 /**
- * Dashboard - GET /admin
+ * Settings - GET /admin (root now redirects to settings)
  */
 admin.get('/', async (c) => {
+  return c.redirect('/admin/settings');
+});
+
+/**
+ * Settings - GET /admin/settings
+ */
+admin.get('/settings', async (c) => {
   const db = new DatabaseService(c.env.DB);
+  const settingsService = new SettingsService(c.env.DB);
 
-  const webhookStats = await db.getWebhookStats();
-  const zaloStats = await db.getZaloStats();
-  const recentWebhooks = await db.getWebhookLogs(10);
+  const config = await db.getMessageConfig();
+  const mappings = await db.getZaloFieldMappings();
+  const appSettings = await settingsService.getAllSettings();
 
-  // Build webhook URL from current request
-  const url = new URL(c.req.url);
-  const webhookUrl = `${url.protocol}//${url.host}/webhook/shopify`;
+  // Check if first-time setup
+  const hasPassword = await settingsService.hasAdminPassword();
 
   return c.html(
-    <DashboardView
-      webhookStats={webhookStats}
-      zaloStats={zaloStats}
-      recentWebhooks={recentWebhooks}
-      webhookUrl={webhookUrl}
+    <SettingsView
+      config={
+        config || {
+          id: 1,
+          include_order_number: true,
+          include_total_amount: true,
+          include_item_list: true,
+          include_delivery_info: true,
+          send_condition: 'all',
+          min_amount: 0,
+          phone_field_mapping: 'phone',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }
+      }
+      appConfig={{
+        shopify_shop_domain: appSettings.shopify_shop_domain,
+        zalo_app_id: appSettings.zalo_app_id,
+        zalo_oa_id: appSettings.zalo_oa_id,
+        zalo_template_id: appSettings.zalo_template_id,
+      }}
+      mappings={mappings}
+      isFirstTimeSetup={!hasPassword}
     />
   );
+});
+
+/**
+ * Update Admin Password - POST /admin/api/settings/password
+ */
+admin.post('/api/settings/password', async (c) => {
+  try {
+    const formData = await c.req.parseBody();
+    const password = formData.password as string;
+    const confirmPassword = formData.confirm_password as string;
+
+    if (!password || password.length < 6) {
+      return c.html(<Alert type="error" message="Password must be at least 6 characters" />);
+    }
+
+    if (password !== confirmPassword) {
+      return c.html(<Alert type="error" message="Passwords do not match" />);
+    }
+
+    const settingsService = new SettingsService(c.env.DB);
+    await settingsService.setAdminPassword(password);
+
+    return c.html(<Alert type="success" message="Password updated successfully!" />);
+  } catch (error) {
+    console.error('Update password error:', error);
+    return c.html(<Alert type="error" message={`Failed to update password: ${error instanceof Error ? error.message : 'Unknown error'}`} />);
+  }
+});
+
+/**
+ * Update Shopify Settings - POST /admin/api/settings/shopify
+ */
+admin.post('/api/settings/shopify', async (c) => {
+  try {
+    const formData = await c.req.parseBody();
+    const settingsService = new SettingsService(c.env.DB);
+
+    const updates: Record<string, string> = {};
+
+    if (formData.shopify_shop_domain) {
+      updates.shopify_shop_domain = formData.shopify_shop_domain as string;
+    }
+    if (formData.shopify_webhook_secret) {
+      updates.shopify_webhook_secret = formData.shopify_webhook_secret as string;
+    }
+
+    if (Object.keys(updates).length > 0) {
+      await settingsService.setMany(updates);
+    }
+
+    return c.html(<Alert type="success" message="Shopify settings saved successfully!" />);
+  } catch (error) {
+    console.error('Save Shopify settings error:', error);
+    return c.html(<Alert type="error" message={`Failed to save settings: ${error instanceof Error ? error.message : 'Unknown error'}`} />);
+  }
+});
+
+/**
+ * Update Zalo Settings - POST /admin/api/settings/zalo
+ */
+admin.post('/api/settings/zalo', async (c) => {
+  try {
+    const formData = await c.req.parseBody();
+    const settingsService = new SettingsService(c.env.DB);
+
+    const updates: Record<string, string> = {};
+
+    if (formData.zalo_app_id) {
+      updates.zalo_app_id = formData.zalo_app_id as string;
+    }
+    if (formData.zalo_oa_id) {
+      updates.zalo_oa_id = formData.zalo_oa_id as string;
+    }
+    if (formData.zalo_template_id) {
+      updates.zalo_template_id = formData.zalo_template_id as string;
+    }
+    if (formData.zalo_access_token) {
+      updates.zalo_access_token = formData.zalo_access_token as string;
+    }
+
+    if (Object.keys(updates).length > 0) {
+      await settingsService.setMany(updates);
+    }
+
+    return c.html(<Alert type="success" message="Zalo settings saved successfully!" />);
+  } catch (error) {
+    console.error('Save Zalo settings error:', error);
+    return c.html(<Alert type="error" message={`Failed to save settings: ${error instanceof Error ? error.message : 'Unknown error'}`} />);
+  }
+});
+
+/**
+ * Save Message Config - POST /admin/api/settings/message-config
+ */
+admin.post('/api/settings/message-config', async (c) => {
+  try {
+    const formData = await c.req.parseBody();
+    const db = new DatabaseService(c.env.DB);
+
+    await db.updateMessageConfig({
+      include_order_number: formData.include_order_number === 'on',
+      include_total_amount: formData.include_total_amount === 'on',
+      include_item_list: formData.include_item_list === 'on',
+      include_delivery_info: formData.include_delivery_info === 'on',
+      send_condition: formData.send_condition as string,
+      min_amount: parseFloat(formData.min_amount as string) || 0,
+      phone_field_mapping: (formData.phone_field_mapping as string) || 'phone',
+    });
+
+    return c.html(<Alert type="success" message="Configuration saved successfully!" />);
+  } catch (error) {
+    console.error('Save config error:', error);
+    return c.html(<Alert type="error" message={`Failed to save configuration: ${error instanceof Error ? error.message : 'Unknown error'}`} />);
+  }
+});
+
+/**
+ * Test Zalo Connection - POST /admin/api/test-zalo
+ */
+admin.post('/api/test-zalo', async (c) => {
+  try {
+    const settingsService = new SettingsService(c.env.DB);
+    const settings = await settingsService.getAllSettings();
+
+    const zaloService = new ZaloService(
+      settings.zalo_app_id,
+      settings.zalo_access_token,
+      settings.zalo_oa_id
+    );
+
+    const result = await zaloService.testConnection();
+
+    if (result.success) {
+      return c.html(<Alert type="success" message={`✓ Connected successfully! OA Name: ${result.details?.name || 'N/A'}`} />);
+    } else {
+      return c.html(<Alert type="error" message={`✗ Connection failed: ${result.message}`} />);
+    }
+  } catch (error) {
+    console.error('Test Zalo error:', error);
+    return c.html(<Alert type="error" message={`Error: ${error instanceof Error ? error.message : 'Unknown error'}`} />);
+  }
+});
+
+/**
+ * Get Template Info - GET /admin/api/template-info
+ */
+admin.get('/api/template-info', async (c) => {
+  try {
+    const settingsService = new SettingsService(c.env.DB);
+    const settings = await settingsService.getAllSettings();
+
+    const zaloService = new ZaloService(
+      settings.zalo_app_id,
+      settings.zalo_access_token,
+      settings.zalo_oa_id
+    );
+
+    const templateInfo = await zaloService.getTemplateInfo(settings.zalo_template_id);
+
+    if (templateInfo.error === 0) {
+      return c.html(
+        <div class="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm">
+          <p class="font-medium text-blue-900">Template: {templateInfo.data?.template_name}</p>
+          <p class="text-blue-700">Status: {templateInfo.data?.status}</p>
+          <p class="text-blue-700">Quality: {templateInfo.data?.template_quality}</p>
+          <p class="text-blue-700">Tag: {templateInfo.data?.template_tag}</p>
+        </div>
+      );
+    } else {
+      return c.html(<Alert type="error" message={`Failed to get template info: [${templateInfo.error}] ${templateInfo.message}`} />);
+    }
+  } catch (error) {
+    console.error('Template info error:', error);
+    return c.html(<Alert type="error" message={`Error: ${error instanceof Error ? error.message : 'Unknown error'}`} />);
+  }
+});
+
+/**
+ * List All Templates - GET /admin/api/templates-refresh
+ */
+admin.get('/api/templates-refresh', async (c) => {
+  try {
+    const settingsService = new SettingsService(c.env.DB);
+    const settings = await settingsService.getAllSettings();
+
+    const zaloService = new ZaloService(
+      settings.zalo_app_id,
+      settings.zalo_access_token,
+      settings.zalo_oa_id
+    );
+
+    const result = await zaloService.listAllTemplates(0, 100);
+
+    if (result.error === 0) {
+      const templates = result.data?.templates || [];
+      return c.html(
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div class="space-y-2 max-h-[400px] overflow-y-auto">
+            {templates.map((template: any) => (
+              <div
+                key={template.template_id}
+                class="p-3 border border-gray-200 rounded-lg cursor-pointer hover:border-gray-300 transition text-sm"
+                hx-get={`/admin/api/templates/${template.template_id}`}
+                hx-target="#template-detail-inline"
+                hx-swap="innerHTML"
+              >
+                <div class="flex justify-between items-start mb-1">
+                  <span class="font-medium">{template.template_name}</span>
+                  <span class={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                    template.status === 'approved' ? 'bg-green-100 text-green-800' :
+                    template.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                    'bg-gray-100 text-gray-800'
+                  }`}>
+                    {template.status}
+                  </span>
+                </div>
+                <p class="text-xs text-gray-500">ID: {template.template_id}</p>
+              </div>
+            ))}
+          </div>
+          <div id="template-detail-inline">
+            <div class="p-4 bg-gray-50 rounded-lg text-sm text-gray-500 text-center">
+              Select a template to view details
+            </div>
+          </div>
+        </div>
+      );
+    } else {
+      return c.html(<Alert type="error" message={`Failed to load templates: ${result.message}`} />);
+    }
+  } catch (error) {
+    console.error('List templates error:', error);
+    return c.html(<Alert type="error" message={`Error: ${error instanceof Error ? error.message : 'Unknown error'}`} />);
+  }
+});
+
+/**
+ * Get Template Details - GET /admin/api/templates/:id
+ */
+admin.get('/api/templates/:id', async (c) => {
+  try {
+    const templateId = c.req.param('id');
+    const settingsService = new SettingsService(c.env.DB);
+    const settings = await settingsService.getAllSettings();
+
+    const zaloService = new ZaloService(
+      settings.zalo_app_id,
+      settings.zalo_access_token,
+      settings.zalo_oa_id
+    );
+
+    const result = await zaloService.getTemplateInfo(templateId);
+
+    if (result.error === 0) {
+      const template = result.data;
+      const getStatusColor = (status: string) => {
+        switch (status?.toLowerCase()) {
+          case 'approved': return 'bg-green-100 text-green-800';
+          case 'pending': return 'bg-yellow-100 text-yellow-800';
+          case 'rejected': return 'bg-red-100 text-red-800';
+          default: return 'bg-gray-100 text-gray-800';
+        }
+      };
+      const getQualityColor = (quality: string) => {
+        switch (quality?.toLowerCase()) {
+          case 'high': return 'text-green-600';
+          case 'medium': return 'text-yellow-600';
+          case 'low': return 'text-red-600';
+          default: return 'text-gray-600';
+        }
+      };
+
+      return c.html(
+        <div class="p-4 bg-gray-50 rounded-lg text-sm space-y-3">
+          <div class="flex justify-between items-start">
+            <span class="font-medium">{template?.template_name}</span>
+            <span class={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getStatusColor(template?.status || '')}`}>
+              {template?.status}
+            </span>
+          </div>
+          <p class="text-xs text-gray-500">ID: {template?.template_id}</p>
+          <div class="flex gap-2 text-xs">
+            <span class={`font-medium ${getQualityColor(template?.template_quality || '')}`}>{template?.template_quality} quality</span>
+            <span class="text-gray-400">|</span>
+            <span class="text-gray-600">{template?.template_tag}</span>
+          </div>
+          {template?.preview_url && (
+            <a href={template.preview_url} target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 text-xs block">
+              View Preview
+            </a>
+          )}
+          {template?.params && template.params.length > 0 && (
+            <div>
+              <p class="text-xs font-medium text-gray-700 mb-1">Parameters ({template.params.length})</p>
+              <div class="space-y-1">
+                {template.params.map((param: any, idx: number) => (
+                  <div key={idx} class="p-2 bg-white rounded border border-gray-200 text-xs">
+                    <div class="flex justify-between">
+                      <span class="font-medium">{param.name}</span>
+                      {param.require && <span class="text-red-600">Required</span>}
+                    </div>
+                    <p class="text-gray-500">Type: {param.type}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {template?.buttons && template.buttons.length > 0 && (
+            <div>
+              <p class="text-xs font-medium text-gray-700 mb-1">Buttons ({template.buttons.length})</p>
+              <div class="space-y-1">
+                {template.buttons.map((btn: any, idx: number) => (
+                  <div key={idx} class="p-2 bg-white rounded border border-gray-200 text-xs">
+                    <p class="font-medium">{btn.title}</p>
+                    <p class="text-gray-500">Type: {btn.type}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <button
+            type="button"
+            onclick={`navigator.clipboard.writeText('${template?.template_id}')`}
+            class="w-full px-3 py-1.5 bg-white border border-gray-300 text-gray-700 rounded hover:bg-gray-100 transition text-xs font-medium"
+          >
+            Copy Template ID
+          </button>
+        </div>
+      );
+    } else {
+      return c.html(<Alert type="error" message={`Failed: ${result.message}`} />);
+    }
+  } catch (error) {
+    console.error('Get template details error:', error);
+    return c.html(<Alert type="error" message={`Error: ${error instanceof Error ? error.message : 'Unknown error'}`} />);
+  }
+});
+
+/**
+ * Test Send Message - POST /admin/api/test-send
+ */
+admin.post('/api/test-send', async (c) => {
+  try {
+    const formData = await c.req.parseBody();
+    const phone = formData.phone as string;
+    const orderNumber = (formData.order_number as string) || '12345';
+    const totalAmount = (formData.total_amount as string) || '1,000,000 VND';
+    const message = (formData.message as string) || 'This is a test message from Shopify-Zalo Worker';
+
+    if (!phone) {
+      return c.html(<Alert type="error" message="Phone number is required" />);
+    }
+
+    const db = new DatabaseService(c.env.DB);
+    const settingsService = new SettingsService(c.env.DB);
+    const settings = await settingsService.getAllSettings();
+
+    const zaloService = new ZaloService(
+      settings.zalo_app_id,
+      settings.zalo_access_token,
+      settings.zalo_oa_id
+    );
+
+    // Get field mappings from database
+    const mappings = await db.getZaloFieldMappings();
+
+    // Build template data using field mappings
+    const templateData: Record<string, string> = {};
+
+    for (const mapping of mappings) {
+      switch (mapping.zalo_field_name.toLowerCase()) {
+        case 'order_number':
+        case 'order_code':
+          templateData[mapping.zalo_field_name] = orderNumber;
+          break;
+        case 'total_amount':
+        case 'total':
+        case 'amount':
+          templateData[mapping.zalo_field_name] = totalAmount;
+          break;
+        case 'message':
+        case 'content':
+          templateData[mapping.zalo_field_name] = message;
+          break;
+        case 'customer_name':
+          templateData[mapping.zalo_field_name] = 'Test Customer';
+          break;
+        default:
+          templateData[mapping.zalo_field_name] = mapping.default_value || '';
+      }
+    }
+
+    // If no mappings configured, fallback to form field names
+    if (mappings.length === 0) {
+      templateData.order_number = orderNumber;
+      templateData.total_amount = totalAmount;
+      templateData.message = message;
+    }
+
+    const result = await zaloService.sendTemplateMessage(phone, settings.zalo_template_id, templateData);
+
+    if (result.error === 0) {
+      return c.html(<Alert type="success" message={`✓ Test message sent successfully to ${phone}!`} />);
+    } else {
+      return c.html(<Alert type="error" message={`✗ Failed to send: ${result.message}`} />);
+    }
+  } catch (error) {
+    console.error('Test send error:', error);
+    return c.html(<Alert type="error" message={`Error: ${error instanceof Error ? error.message : 'Unknown error'}`} />);
+  }
 });
 
 /**
@@ -251,267 +695,6 @@ admin.get('/logs', async (c) => {
 });
 
 /**
- * Settings - GET /admin/settings
- */
-admin.get('/settings', async (c) => {
-  const db = new DatabaseService(c.env.DB);
-  const config = await db.getMessageConfig();
-
-  return c.html(
-    <SettingsView
-      config={
-        config || {
-          id: 1,
-          include_order_number: true,
-          include_total_amount: true,
-          include_item_list: true,
-          include_delivery_info: true,
-          send_condition: 'all',
-          min_amount: 0,
-          phone_field_mapping: 'phone',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }
-      }
-    />
-  );
-});
-
-/**
- * Save Message Config - POST /admin/api/settings/message-config
- */
-admin.post('/api/settings/message-config', async (c) => {
-  try {
-    const formData = await c.req.parseBody();
-    const db = new DatabaseService(c.env.DB);
-
-    await db.updateMessageConfig({
-      include_order_number: formData.include_order_number === 'on',
-      include_total_amount: formData.include_total_amount === 'on',
-      include_item_list: formData.include_item_list === 'on',
-      include_delivery_info: formData.include_delivery_info === 'on',
-      send_condition: formData.send_condition as string,
-      min_amount: parseFloat(formData.min_amount as string) || 0,
-      phone_field_mapping: (formData.phone_field_mapping as string) || 'phone',
-    });
-
-    return c.html(<Alert type="success" message="Configuration saved successfully!" />);
-  } catch (error) {
-    console.error('Save config error:', error);
-    return c.html(
-      <Alert
-        type="error"
-        message={`Failed to save configuration: ${
-          error instanceof Error ? error.message : 'Unknown error'
-        }`}
-      />
-    );
-  }
-});
-
-/**
- * Test Zalo Connection - POST /admin/api/test-zalo
- */
-admin.post('/api/test-zalo', async (c) => {
-  try {
-    const zaloService = new ZaloService(
-      c.env.ZALO_APP_ID,
-      c.env.ZALO_ACCESS_TOKEN,
-      c.env.ZALO_OA_ID
-    );
-
-    const result = await zaloService.testConnection();
-
-    if (result.success) {
-      return c.html(
-        <Alert
-          type="success"
-          message={`✓ Connected successfully! OA Name: ${result.details?.name || 'N/A'}`}
-        />
-      );
-    } else {
-      return c.html(<Alert type="error" message={`✗ Connection failed: ${result.message}`} />);
-    }
-  } catch (error) {
-    console.error('Test Zalo error:', error);
-    return c.html(
-      <Alert
-        type="error"
-        message={`Error: ${error instanceof Error ? error.message : 'Unknown error'}`}
-      />
-    );
-  }
-});
-
-/**
- * Get Template Info - GET /admin/api/template-info
- */
-admin.get('/api/template-info', async (c) => {
-  try {
-    const zaloService = new ZaloService(
-      c.env.ZALO_APP_ID,
-      c.env.ZALO_ACCESS_TOKEN,
-      c.env.ZALO_OA_ID
-    );
-
-    const templateInfo = await zaloService.getTemplateInfo(c.env.ZALO_TEMPLATE_ID);
-
-    if (templateInfo.error === 0) {
-      return c.html(
-        <div class="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm">
-          <p class="font-medium text-blue-900">Template: {templateInfo.data?.template_name}</p>
-          <p class="text-blue-700">Status: {templateInfo.data?.status}</p>
-          <p class="text-blue-700">Quality: {templateInfo.data?.template_quality}</p>
-          <p class="text-blue-700">Tag: {templateInfo.data?.template_tag}</p>
-        </div>
-      );
-    } else {
-      return c.html(
-        <Alert type="error" message={`Failed to get template info: [${templateInfo.error}] ${templateInfo.message}`} />
-      );
-    }
-  } catch (error) {
-    console.error('Template info error:', error);
-    return c.html(
-      <Alert
-        type="error"
-        message={`Error: ${error instanceof Error ? error.message : 'Unknown error'}`}
-      />
-    );
-  }
-});
-
-/**
- * List All Templates - GET /admin/api/templates
- */
-admin.get('/api/templates', async (c) => {
-  try {
-    const zaloService = new ZaloService(
-      c.env.ZALO_APP_ID,
-      c.env.ZALO_ACCESS_TOKEN,
-      c.env.ZALO_OA_ID
-    );
-
-    const result = await zaloService.listAllTemplates(0, 100);
-
-    if (result.error === 0) {
-      return c.json(result.data);
-    } else {
-      return c.json({ error: result.message }, 400);
-    }
-  } catch (error) {
-    console.error('List templates error:', error);
-    return c.json({ error: error instanceof Error ? error.message : 'Unknown error' }, 500);
-  }
-});
-
-/**
- * Get Template Details - GET /admin/api/templates/:id
- */
-admin.get('/api/templates/:id', async (c) => {
-  try {
-    const templateId = c.req.param('id');
-    const zaloService = new ZaloService(
-      c.env.ZALO_APP_ID,
-      c.env.ZALO_ACCESS_TOKEN,
-      c.env.ZALO_OA_ID
-    );
-
-    const result = await zaloService.getTemplateInfo(templateId);
-
-    if (result.error === 0) {
-      return c.json(result.data);
-    } else {
-      return c.json({ error: result.message }, 400);
-    }
-  } catch (error) {
-    console.error('Get template details error:', error);
-    return c.json({ error: error instanceof Error ? error.message : 'Unknown error' }, 500);
-  }
-});
-
-/**
- * Test Send Message - POST /admin/api/test-send
- */
-admin.post('/api/test-send', async (c) => {
-  try {
-    const formData = await c.req.parseBody();
-    const phone = formData.phone as string;
-    const orderNumber = (formData.order_number as string) || '12345';
-    const totalAmount = (formData.total_amount as string) || '1,000,000 VND';
-    const message = (formData.message as string) || 'This is a test message from Shopify-Zalo Worker';
-
-    if (!phone) {
-      return c.html(<Alert type="error" message="Phone number is required" />);
-    }
-
-    const db = new DatabaseService(c.env.DB);
-    const zaloService = new ZaloService(
-      c.env.ZALO_APP_ID,
-      c.env.ZALO_ACCESS_TOKEN,
-      c.env.ZALO_OA_ID
-    );
-
-    // Get field mappings from database
-    const mappings = await db.getZaloFieldMappings();
-
-    // Build template data using field mappings
-    // Map form values to the configured Zalo field names
-    const templateData: Record<string, string> = {};
-
-    for (const mapping of mappings) {
-      // Map common field names to form values
-      switch (mapping.zalo_field_name.toLowerCase()) {
-        case 'order_number':
-        case 'order_code':
-          templateData[mapping.zalo_field_name] = orderNumber;
-          break;
-        case 'total_amount':
-        case 'total':
-        case 'amount':
-          templateData[mapping.zalo_field_name] = totalAmount;
-          break;
-        case 'message':
-        case 'content':
-          templateData[mapping.zalo_field_name] = message;
-          break;
-        case 'customer_name':
-          templateData[mapping.zalo_field_name] = 'Test Customer';
-          break;
-        default:
-          // For other fields, use default value or empty string
-          templateData[mapping.zalo_field_name] = mapping.default_value || '';
-      }
-    }
-
-    // If no mappings configured, fallback to form field names
-    if (mappings.length === 0) {
-      templateData.order_number = orderNumber;
-      templateData.total_amount = totalAmount;
-      templateData.message = message;
-    }
-
-    const result = await zaloService.sendTemplateMessage(phone, c.env.ZALO_TEMPLATE_ID, templateData);
-
-    if (result.error === 0) {
-      return c.html(
-        <Alert type="success" message={`✓ Test message sent successfully to ${phone}!`} />
-      );
-    } else {
-      return c.html(<Alert type="error" message={`✗ Failed to send: ${result.message}`} />);
-    }
-  } catch (error) {
-    console.error('Test send error:', error);
-    return c.html(
-      <Alert
-        type="error"
-        message={`Error: ${error instanceof Error ? error.message : 'Unknown error'}`}
-      />
-    );
-  }
-});
-
-/**
  * Retry Webhook - POST /admin/api/retry/:id
  */
 admin.post('/api/retry/:id', async (c) => {
@@ -521,76 +704,11 @@ admin.post('/api/retry/:id', async (c) => {
 
     await db.retryWebhook(id);
 
-    return c.html(
-      <Alert
-        type="success"
-        message="Webhook queued for retry. Refresh the page to see updated status."
-      />
-    );
+    return c.html(<Alert type="success" message="Webhook queued for retry. Refresh the page to see updated status." />);
   } catch (error) {
     console.error('Retry webhook error:', error);
-    return c.html(
-      <Alert
-        type="error"
-        message={`Failed to retry: ${error instanceof Error ? error.message : 'Unknown error'}`}
-      />
-    );
+    return c.html(<Alert type="error" message={`Failed to retry: ${error instanceof Error ? error.message : 'Unknown error'}`} />);
   }
-});
-
-/**
- * Templates Page - GET /admin/templates
- */
-admin.get('/templates', async (c) => {
-  return c.html(<TemplatesView />);
-});
-
-/**
- * Templates Page with selected template - GET /admin/templates/:id
- */
-admin.get('/templates/:id', async (c) => {
-  try {
-    const templateId = c.req.param('id');
-    const zaloService = new ZaloService(
-      c.env.ZALO_APP_ID,
-      c.env.ZALO_ACCESS_TOKEN,
-      c.env.ZALO_OA_ID
-    );
-
-    // Fetch all templates and the selected one
-    const [listResult, detailResult] = await Promise.all([
-      zaloService.listAllTemplates(0, 100),
-      zaloService.getTemplateInfo(templateId),
-    ]);
-
-    const templates = listResult.error === 0 ? listResult.data?.templates || [] : [];
-    const selectedTemplate = detailResult.error === 0 ? detailResult.data : null;
-
-    return c.html(
-      <TemplatesView
-        templates={templates}
-        selectedTemplate={selectedTemplate}
-        error={listResult.error !== 0 ? listResult.message : undefined}
-      />
-    );
-  } catch (error) {
-    console.error('Templates page error:', error);
-    return c.html(
-      <TemplatesView
-        error={error instanceof Error ? error.message : 'Unknown error'}
-      />
-    );
-  }
-});
-
-/**
- * Field Mappings Page - GET /admin/field-mappings
- */
-admin.get('/field-mappings', async (c) => {
-  const db = new DatabaseService(c.env.DB);
-  const mappings = await db.getZaloFieldMappings();
-
-  return c.html(<FieldMappingsView mappings={mappings} />);
 });
 
 /**
@@ -612,12 +730,7 @@ admin.post('/api/field-mappings', async (c) => {
     return c.html(<Alert type="success" message="Field mapping created successfully!" />);
   } catch (error) {
     console.error('Create field mapping error:', error);
-    return c.html(
-      <Alert
-        type="error"
-        message={`Failed to create mapping: ${error instanceof Error ? error.message : 'Unknown error'}`}
-      />
-    );
+    return c.html(<Alert type="error" message={`Failed to create mapping: ${error instanceof Error ? error.message : 'Unknown error'}`} />);
   }
 });
 
@@ -634,12 +747,7 @@ admin.delete('/api/field-mappings/:id', async (c) => {
     return c.html(''); // Empty response removes the row
   } catch (error) {
     console.error('Delete field mapping error:', error);
-    return c.html(
-      <Alert
-        type="error"
-        message={`Failed to delete mapping: ${error instanceof Error ? error.message : 'Unknown error'}`}
-      />
-    );
+    return c.html(<Alert type="error" message={`Failed to delete mapping: ${error instanceof Error ? error.message : 'Unknown error'}`} />);
   }
 });
 
@@ -712,20 +820,10 @@ admin.post('/api/field-mappings/preset/:type', async (c) => {
       }
     }
 
-    return c.html(
-      <Alert
-        type="success"
-        message={`Added ${presets.length} field mappings. Refresh the page to see them.`}
-      />
-    );
+    return c.html(<Alert type="success" message={`Added ${presets.length} field mappings. Refresh the page to see them.`} />);
   } catch (error) {
     console.error('Preset field mappings error:', error);
-    return c.html(
-      <Alert
-        type="error"
-        message={`Failed to add presets: ${error instanceof Error ? error.message : 'Unknown error'}`}
-      />
-    );
+    return c.html(<Alert type="error" message={`Failed to add presets: ${error instanceof Error ? error.message : 'Unknown error'}`} />);
   }
 });
 

@@ -5,15 +5,17 @@ import type { ShopifyOrder } from '../types/shopify';
 import { ShopifyService } from '../services/shopify';
 import { ZaloService } from '../services/zalo';
 import { FieldMapperService } from '../services/fieldMapper';
+import { SettingsService } from '../services/settings';
 
 type Bindings = {
   DB: D1Database;
-  SHOPIFY_WEBHOOK_SECRET: string;
-  SHOPIFY_SHOP_DOMAIN: string;
-  ZALO_APP_ID: string;
-  ZALO_ACCESS_TOKEN: string;
-  ZALO_OA_ID: string;
-  ZALO_TEMPLATE_ID: string;
+  // Fallback env vars (optional, for migration)
+  SHOPIFY_WEBHOOK_SECRET?: string;
+  SHOPIFY_SHOP_DOMAIN?: string;
+  ZALO_APP_ID?: string;
+  ZALO_ACCESS_TOKEN?: string;
+  ZALO_OA_ID?: string;
+  ZALO_TEMPLATE_ID?: string;
 };
 
 const webhook = new Hono<{ Bindings: Bindings }>();
@@ -24,6 +26,25 @@ const webhook = new Hono<{ Bindings: Bindings }>();
  */
 webhook.post('/shopify', async (c) => {
   try {
+    // Load settings from database
+    const settingsService = new SettingsService(c.env.DB);
+    const settings = await settingsService.getAllSettings();
+
+    // Fallback to env vars if not in database (for migration)
+    const webhookSecret = settings.shopify_webhook_secret || c.env.SHOPIFY_WEBHOOK_SECRET || '';
+    const zaloAppId = settings.zalo_app_id || c.env.ZALO_APP_ID || '';
+    const zaloAccessToken = settings.zalo_access_token || c.env.ZALO_ACCESS_TOKEN || '';
+    const zaloOaId = settings.zalo_oa_id || c.env.ZALO_OA_ID || '';
+    const zaloTemplateId = settings.zalo_template_id || c.env.ZALO_TEMPLATE_ID || '';
+
+    // Validate required settings
+    if (!webhookSecret) {
+      return c.json({ error: 'Shopify webhook secret not configured' }, 500);
+    }
+    if (!zaloAccessToken || !zaloTemplateId) {
+      return c.json({ error: 'Zalo settings not configured' }, 500);
+    }
+
     // Get raw body for HMAC verification
     const rawBody = await c.req.text();
 
@@ -38,7 +59,7 @@ webhook.post('/shopify', async (c) => {
     }
 
     // Verify webhook authenticity
-    const shopifyService = new ShopifyService(c.env.SHOPIFY_WEBHOOK_SECRET);
+    const shopifyService = new ShopifyService(webhookSecret);
     const isValid = await shopifyService.verifyWebhook(rawBody, hmacHeader);
 
     if (!isValid) {
@@ -144,11 +165,7 @@ webhook.post('/shopify', async (c) => {
     shopifyService.formatOrderSummary(order, config);
 
     // Send Zalo message
-    const zaloService = new ZaloService(
-      c.env.ZALO_APP_ID,
-      c.env.ZALO_ACCESS_TOKEN,
-      c.env.ZALO_OA_ID
-    );
+    const zaloService = new ZaloService(zaloAppId, zaloAccessToken, zaloOaId);
 
     // Get field mappings from database
     const mappingsResult = await c.env.DB.prepare(
@@ -210,7 +227,7 @@ webhook.post('/shopify', async (c) => {
 
     const zaloResult = await zaloService.sendTemplateMessage(
       phone,
-      c.env.ZALO_TEMPLATE_ID,
+      zaloTemplateId,
       templateData
     );
 
@@ -222,7 +239,7 @@ webhook.post('/shopify', async (c) => {
       .bind(
         webhookLogId,
         phone,
-        c.env.ZALO_TEMPLATE_ID,
+        zaloTemplateId,
         JSON.stringify(templateData),
         JSON.stringify(zaloResult),
         zaloResult.error === 0 ? 'success' : 'failed'
