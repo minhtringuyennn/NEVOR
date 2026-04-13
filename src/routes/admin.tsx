@@ -222,6 +222,9 @@ admin.get('/settings', async (c) => {
   // Check if first-time setup
   const hasPassword = await settingsService.hasAdminPassword();
 
+  // Get active tab from query param
+  const activeTab = c.req.query('tab') || 'general';
+
   return c.html(
     <SettingsView
       config={
@@ -247,6 +250,7 @@ admin.get('/settings', async (c) => {
       }}
       mappings={mappings}
       isFirstTimeSetup={!hasPassword}
+      activeTab={activeTab}
     />
   );
 });
@@ -754,6 +758,132 @@ admin.post('/api/field-mappings', async (c) => {
   } catch (error) {
     console.error('Create field mapping error:', error);
     return c.html(<Alert type="error" message={`Failed to create mapping: ${error instanceof Error ? error.message : 'Unknown error'}`} />);
+  }
+});
+
+/**
+ * Update Field Mapping - PUT /admin/api/field-mappings/:id
+ */
+admin.put('/api/field-mappings/:id', async (c) => {
+  try {
+    const id = parseInt(c.req.param('id'));
+    const formData = await c.req.parseBody();
+    const db = new DatabaseService(c.env.DB);
+
+    await db.updateZaloFieldMapping(id, {
+      zalo_field_name: formData.zalo_field_name as string,
+      shopify_json_path: formData.shopify_json_path as string,
+      default_value: (formData.default_value as string) || null,
+      is_required: formData.is_required === 'on',
+    });
+
+    // Return updated row HTML
+    const mapping = await db.getZaloFieldMapping(id);
+    if (!mapping) {
+      return c.html(<Alert type="error" message="Mapping not found" />);
+    }
+
+    return c.html(
+      <tr id={`mapping-row-${mapping.id}`}>
+        <td class="px-3 py-2 font-medium text-gray-900">
+          <span class="view-mode">{mapping.zalo_field_name}</span>
+          <input
+            type="text"
+            name="zalo_field_name"
+            value={mapping.zalo_field_name}
+            form={`edit-form-${mapping.id}`}
+            class="edit-mode hidden w-full px-2 py-1 border border-gray-300 rounded text-sm"
+          />
+        </td>
+        <td class="px-3 py-2 text-gray-600 font-mono">
+          <span class="view-mode">{mapping.shopify_json_path}</span>
+          <input
+            type="text"
+            name="shopify_json_path"
+            value={mapping.shopify_json_path}
+            form={`edit-form-${mapping.id}`}
+            class="edit-mode hidden w-full px-2 py-1 border border-gray-300 rounded text-sm"
+          />
+        </td>
+        <td class="px-3 py-2 text-gray-600">
+          <span class="view-mode">{mapping.default_value || '-'}</span>
+          <input
+            type="text"
+            name="default_value"
+            value={mapping.default_value || ''}
+            form={`edit-form-${mapping.id}`}
+            class="edit-mode hidden w-full px-2 py-1 border border-gray-300 rounded text-sm"
+            placeholder="-"
+          />
+        </td>
+        <td class="px-3 py-2 text-center">
+          <span class="view-mode">
+            {mapping.is_required ? (
+              <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-red-100 text-red-800">Yes</span>
+            ) : (
+              <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-gray-100 text-gray-800">No</span>
+            )}
+          </span>
+          <span class="edit-mode hidden">
+            <input
+              type="checkbox"
+              name="is_required"
+              value="on"
+              form={`edit-form-${mapping.id}`}
+              checked={mapping.is_required}
+              class="h-4 w-4 text-blue-600 border-gray-300 rounded"
+            />
+          </span>
+        </td>
+        <td class="px-3 py-2 text-right">
+          <span class="view-mode space-x-2">
+            <button
+              type="button"
+              onclick={`document.querySelectorAll('#mapping-row-${mapping.id} .view-mode').forEach(el => el.classList.add('hidden')); document.querySelectorAll('#mapping-row-${mapping.id} .edit-mode').forEach(el => el.classList.remove('hidden'));`}
+              class="text-blue-600 hover:text-blue-900 text-xs font-medium"
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              hx-delete={`/admin/api/field-mappings/${mapping.id}`}
+              hx-confirm={`Delete mapping for "${mapping.zalo_field_name}"?`}
+              hx-target={`#mapping-row-${mapping.id}`}
+              hx-swap="outerHTML"
+              class="text-red-600 hover:text-red-900 text-xs font-medium"
+            >
+              Delete
+            </button>
+          </span>
+          <span class="edit-mode hidden space-x-2">
+            <form
+              id={`edit-form-${mapping.id}`}
+              hx-put={`/admin/api/field-mappings/${mapping.id}`}
+              hx-target={`#mapping-row-${mapping.id}`}
+              hx-swap="outerHTML"
+              class="inline"
+            >
+              <button
+                type="submit"
+                class="text-green-600 hover:text-green-900 text-xs font-medium"
+              >
+                Save
+              </button>
+            </form>
+            <button
+              type="button"
+              onclick={`document.querySelectorAll('#mapping-row-${mapping.id} .edit-mode').forEach(el => el.classList.add('hidden')); document.querySelectorAll('#mapping-row-${mapping.id} .view-mode').forEach(el => el.classList.remove('hidden'));`}
+              class="text-gray-600 hover:text-gray-900 text-xs font-medium"
+            >
+              Cancel
+            </button>
+          </span>
+        </td>
+      </tr>
+    );
+  } catch (error) {
+    console.error('Update field mapping error:', error);
+    return c.html(<Alert type="error" message={`Failed to update mapping: ${error instanceof Error ? error.message : 'Unknown error'}`} />);
   }
 });
 

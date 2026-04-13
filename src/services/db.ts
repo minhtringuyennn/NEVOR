@@ -58,6 +58,23 @@ export class DatabaseService {
   constructor(private db: D1Database) {}
 
   /**
+   * Auto-fail webhooks that have been pending/processing for more than 1 minute
+   */
+  async autoFailStaleWebhooks(): Promise<number> {
+    const result = await this.db
+      .prepare(
+        `
+        UPDATE webhook_logs
+        SET status = 'failed', error = 'Processing timeout - automatically marked as failed after 1 minute'
+        WHERE (status = 'pending' OR status = 'processing')
+        AND datetime(created_at) < datetime('now', '-1 minute')
+        `
+      )
+      .run();
+    return result.meta?.changes || 0;
+  }
+
+  /**
    * Get all webhook logs with optional filtering
    */
   async getWebhookLogs(
@@ -65,6 +82,9 @@ export class DatabaseService {
     offset: number = 0,
     status?: string
   ): Promise<WebhookLog[]> {
+    // Auto-fail stale webhooks first
+    await this.autoFailStaleWebhooks();
+
     let query = 'SELECT * FROM webhook_logs';
     const params: any[] = [];
 
