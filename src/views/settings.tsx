@@ -479,16 +479,20 @@ export const SettingsView: FC<SettingsViewProps> = (props) => {
 
                   {/* Instructions */}
                   <div class="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                    <h4 class="text-sm font-medium text-blue-900 mb-2">How to get your Zalo Tokens:</h4>
+                    <h4 class="text-sm font-medium text-blue-900 mb-2">How to get your Zalo OA Tokens:</h4>
                     <ol class="text-xs text-blue-800 space-y-1 list-decimal list-inside">
-                      <li>Go to <a href="https://oa.zalo.me" target="_blank" class="underline">Zalo Official Account Dashboard</a></li>
-                      <li>Select your Official Account</li>
-                      <li>Go to Settings {'>'} Account {'>'} API Management</li>
+                      <li>Go to <a href="https://developers.zalo.me" target="_blank" class="underline">Zalo Developer Portal</a> and open your App</li>
+                      <li>Go to <strong>Tools</strong> {'>'} <strong>Access Token</strong></li>
+                      <li>Select <strong>Loại access token: OA Access Token</strong></li>
+                      <li>Authorize with the OA admin account</li>
                       <li>Copy both the Access Token and Refresh Token</li>
-                      <li>Paste them in the fields above and click Save</li>
+                      <li>Paste them in the fields above along with App ID, App Secret, and OA ID, then click Save</li>
                     </ol>
-                    <p class="text-xs text-blue-700 mt-2">
-                      <strong>Note:</strong> The system will automatically refresh expired access tokens using the refresh token.
+                    <p class="text-xs text-red-700 mt-2 font-medium">
+                      Important: You need an <strong>OA Access Token</strong>, not a user access token. Using the wrong token type will cause all API calls to fail.
+                    </p>
+                    <p class="text-xs text-blue-700 mt-1">
+                      The App Secret is required for automatic token refresh when the access token expires (every 1 hour).
                     </p>
                   </div>
                 </Card>
