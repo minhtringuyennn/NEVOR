@@ -14,7 +14,10 @@ export class ZaloService {
   private accessToken: string;
   private refreshTokenValue?: string;
   private settingsService?: SettingsService;
+  // ZNS template APIs (phone-based sending, template listing)
   private baseUrl = 'https://business.openapi.zalo.me';
+  // OA profile/management APIs (v3 OpenAPI)
+  private oaBaseUrl = 'https://openapi.zalo.me/v3.0/oa';
 
   constructor(accessToken: string, refreshToken?: string, settingsService?: SettingsService) {
     this.accessToken = accessToken;
@@ -156,7 +159,7 @@ export class ZaloService {
   async getOAProfile(): Promise<ZaloOAProfile> {
     try {
       const result = await this.makeRequest<ZaloOAProfile>(
-        `${this.baseUrl}/oa/getoa`,
+        `${this.oaBaseUrl}/getoa`,
         {
           method: 'GET',
         }
