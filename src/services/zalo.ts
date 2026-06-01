@@ -16,8 +16,8 @@ export class ZaloService {
   private settingsService?: SettingsService;
   // ZNS template APIs (phone-based sending, template listing)
   private baseUrl = 'https://business.openapi.zalo.me';
-  // OA profile/management APIs (v3 OpenAPI)
-  private oaBaseUrl = 'https://openapi.zalo.me/v3.0/oa';
+  // OA profile/management APIs (v2 OpenAPI)
+  private oaBaseUrl = 'https://openapi.zalo.me/v2.0/oa';
 
   constructor(accessToken: string, refreshToken?: string, settingsService?: SettingsService) {
     this.accessToken = accessToken;

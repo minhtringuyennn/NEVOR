@@ -244,6 +244,7 @@ admin.get('/settings', async (c) => {
       appConfig={{
         shopify_shop_domain: appSettings.shopify_shop_domain,
         zalo_app_id: appSettings.zalo_app_id,
+        zalo_app_secret: appSettings.zalo_app_secret ? '***' : '',
         zalo_oa_id: appSettings.zalo_oa_id,
         zalo_template_id: appSettings.zalo_template_id,
         hasZaloTokens: !!(appSettings.zalo_access_token && appSettings.zalo_access_token.length > 0 && appSettings.zalo_access_token !== ''),
@@ -334,6 +335,9 @@ admin.post('/api/settings/zalo', async (c) => {
     }
     if (formData.zalo_refresh_token) {
       updates.zalo_refresh_token = formData.zalo_refresh_token as string;
+    }
+    if (formData.zalo_app_secret) {
+      updates.zalo_app_secret = formData.zalo_app_secret as string;
     }
 
     if (Object.keys(updates).length > 0) {

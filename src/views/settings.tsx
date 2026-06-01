@@ -33,6 +33,7 @@ interface TemplateDetail extends Template {
 interface AppConfig {
   shopify_shop_domain: string;
   zalo_app_id: string;
+  zalo_app_secret?: string;
   zalo_oa_id: string;
   zalo_template_id: string;
   hasZaloTokens: boolean;
@@ -354,6 +355,21 @@ export const SettingsView: FC<SettingsViewProps> = (props) => {
                           placeholder="Your Zalo App ID"
                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
                         />
+                      </div>
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">
+                          Zalo App Secret
+                        </label>
+                        <input
+                          type="password"
+                          name="zalo_app_secret"
+                          placeholder="•••••••• (hidden for security)"
+                          class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                        />
+                        <p class="mt-1 text-xs text-gray-500">
+                          Required for auto token refresh. Leave empty to keep current.
+                          {props.appConfig.zalo_app_secret ? ' ✓ Configured' : ' Not set'}
+                        </p>
                       </div>
                       <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">
