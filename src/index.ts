@@ -24,17 +24,20 @@ const app = new Hono<{ Bindings: Bindings }>();
 app.use('*', logger());
 app.use('/webhook/*', cors());
 
-// Health check endpoint
+// Home page with Zalo domain verification meta tag
 app.get('/', (c) => {
-  return c.json({
-    status: 'ok',
-    service: 'Shopify-Zalo Worker',
-    version: '1.0.0',
-    endpoints: {
-      webhook: '/webhook/shopify',
-      admin: '/admin',
-    },
-  });
+  return c.html(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="zalo-platform-site-verification" content="OyAHSQR98bfswgLZWPu1TLgBatIs_KSiEJCt" />
+  <title>Shopify Zalo Worker</title>
+</head>
+<body>
+  <p>Shopify Zalo Worker is running. <a href="/admin">Go to Admin</a></p>
+</body>
+</html>`);
 });
 
 // Mount routes
