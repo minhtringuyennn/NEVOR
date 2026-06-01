@@ -202,6 +202,128 @@ admin.get('/logout', (c) => {
 });
 
 /**
+ * Zalo OA OAuth callback - GET /admin/zalo-callback
+ * Exchanges authorization code for OA access + refresh tokens
+ */
+admin.get('/zalo-callback', async (c) => {
+  const code = c.req.query('code');
+  const error = c.req.query('error');
+
+  if (error) {
+    return c.html(
+      <Layout title="Zalo OAuth Error">
+        <div class="min-h-screen flex items-center justify-center bg-gray-50">
+          <div class="max-w-md w-full bg-white rounded-lg shadow-md p-8">
+            <h2 class="text-xl font-bold text-red-600 mb-4">Authorization Failed</h2>
+            <p class="text-gray-600">Error: {error}</p>
+            <a href="/admin/settings?tab=zalo" class="mt-4 inline-block px-4 py-2 bg-blue-600 text-white rounded-lg">Back to Settings</a>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
+  if (!code) {
+    return c.html(
+      <Layout title="Zalo OAuth Error">
+        <div class="min-h-screen flex items-center justify-center bg-gray-50">
+          <div class="max-w-md w-full bg-white rounded-lg shadow-md p-8">
+            <h2 class="text-xl font-bold text-red-600 mb-4">Missing Authorization Code</h2>
+            <p class="text-gray-600">No authorization code received from Zalo.</p>
+            <a href="/admin/settings?tab=zalo" class="mt-4 inline-block px-4 py-2 bg-blue-600 text-white rounded-lg">Back to Settings</a>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
+  const settingsService = new SettingsService(c.env.DB);
+  const appId = await settingsService.get('zalo_app_id') || c.env.ZALO_APP_ID;
+  const appSecret = await settingsService.get('zalo_app_secret');
+
+  if (!appId || !appSecret) {
+    return c.html(
+      <Layout title="Zalo OAuth Error">
+        <div class="min-h-screen flex items-center justify-center bg-gray-50">
+          <div class="max-w-md w-full bg-white rounded-lg shadow-md p-8">
+            <h2 class="text-xl font-bold text-red-600 mb-4">Missing App Credentials</h2>
+            <p class="text-gray-600">App ID and App Secret must be saved in settings before completing OAuth.</p>
+            <a href="/admin/settings?tab=zalo" class="mt-4 inline-block px-4 py-2 bg-blue-600 text-white rounded-lg">Back to Settings</a>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
+  try {
+    const callbackUrl = new URL(c.req.url);
+    const redirectUri = `${callbackUrl.origin}/admin/zalo-callback`;
+
+    const response = await fetch('https://oauth.zaloapp.com/v4/oa/access_token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'secret_key': appSecret,
+      },
+      body: new URLSearchParams({
+        code,
+        app_id: appId,
+        grant_type: 'authorization_code',
+        redirect_uri: redirectUri,
+      }),
+    });
+
+    const data: { access_token?: string; refresh_token?: string; error?: number; message?: string } = await response.json();
+
+    if (data.access_token) {
+      await settingsService.setMany({
+        zalo_access_token: data.access_token,
+        ...(data.refresh_token ? { zalo_refresh_token: data.refresh_token } : {}),
+      });
+
+      return c.html(
+        <Layout title="Zalo Connected">
+          <div class="min-h-screen flex items-center justify-center bg-gray-50">
+            <div class="max-w-md w-full bg-white rounded-lg shadow-md p-8 text-center">
+              <div class="text-green-500 text-5xl mb-4">✓</div>
+              <h2 class="text-xl font-bold text-gray-900 mb-2">Zalo OA Connected!</h2>
+              <p class="text-gray-600 mb-6">Your OA access token has been saved successfully.</p>
+              <a href="/admin/settings?tab=zalo" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Go to Settings</a>
+            </div>
+          </div>
+        </Layout>
+      );
+    } else {
+      return c.html(
+        <Layout title="Zalo OAuth Error">
+          <div class="min-h-screen flex items-center justify-center bg-gray-50">
+            <div class="max-w-md w-full bg-white rounded-lg shadow-md p-8">
+              <h2 class="text-xl font-bold text-red-600 mb-4">Token Exchange Failed</h2>
+              <p class="text-gray-600 mb-2">Zalo returned an error:</p>
+              <pre class="text-xs bg-gray-100 p-3 rounded">{JSON.stringify(data, null, 2)}</pre>
+              <a href="/admin/settings?tab=zalo" class="mt-4 inline-block px-4 py-2 bg-blue-600 text-white rounded-lg">Back to Settings</a>
+            </div>
+          </div>
+        </Layout>
+      );
+    }
+  } catch (err) {
+    console.error('Zalo OAuth callback error:', err);
+    return c.html(
+      <Layout title="Zalo OAuth Error">
+        <div class="min-h-screen flex items-center justify-center bg-gray-50">
+          <div class="max-w-md w-full bg-white rounded-lg shadow-md p-8">
+            <h2 class="text-xl font-bold text-red-600 mb-4">Unexpected Error</h2>
+            <p class="text-gray-600">{err instanceof Error ? err.message : 'Unknown error'}</p>
+            <a href="/admin/settings?tab=zalo" class="mt-4 inline-block px-4 py-2 bg-blue-600 text-white rounded-lg">Back to Settings</a>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+});
+
+/**
  * Settings - GET /admin (root now redirects to settings)
  */
 admin.get('/', async (c) => {
@@ -349,6 +471,48 @@ admin.post('/api/settings/zalo', async (c) => {
     console.error('Save Zalo settings error:', error);
     return c.html(<Alert type="error" message={`Failed to save settings: ${error instanceof Error ? error.message : 'Unknown error'}`} />);
   }
+});
+
+/**
+ * Get Zalo OA OAuth URL - GET /admin/api/zalo/oauth-url
+ */
+admin.get('/api/zalo/oauth-url', async (c) => {
+  const settingsService = new SettingsService(c.env.DB);
+  const appId = await settingsService.get('zalo_app_id') || c.env.ZALO_APP_ID;
+
+  if (!appId) {
+    return c.html(<Alert type="error" message="App ID not configured. Save your App ID first." />);
+  }
+
+  const origin = new URL(c.req.url).origin;
+  const redirectUri = encodeURIComponent(`${origin}/admin/zalo-callback`);
+
+  // Minimal permissions needed: send ZNS by phone + manage templates + get OA info
+  const permissions = [
+    'send_zns_message',
+    'manage_oa_template',
+    'manage_oa',
+  ].join(',');
+
+  const authUrl = `https://oauth.zaloapp.com/v4/oa/permission?app_id=${appId}&redirect_uri=${redirectUri}`;
+
+  return c.html(
+    <div class="p-4 bg-green-50 border border-green-200 rounded-lg space-y-3">
+      <p class="text-sm font-medium text-green-900">Click the link below to authorize your OA:</p>
+      <a
+        href={authUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        class="block w-full text-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium text-sm"
+      >
+        Open Zalo OA Authorization →
+      </a>
+      <p class="text-xs text-green-700">
+        Log in as the OA admin and approve the permissions. You'll be redirected back automatically.
+      </p>
+      <p class="text-xs text-gray-500 break-all">Callback URL: {origin}/admin/zalo-callback</p>
+    </div>
+  );
 });
 
 /**

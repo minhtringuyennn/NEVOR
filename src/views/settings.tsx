@@ -456,6 +456,15 @@ export const SettingsView: FC<SettingsViewProps> = (props) => {
                       </button>
                       <button
                         type="button"
+                        hx-get="/admin/api/zalo/oauth-url"
+                        hx-target="#zalo-config-result"
+                        hx-swap="innerHTML"
+                        class="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition font-medium"
+                      >
+                        Connect Zalo OA
+                      </button>
+                      <button
+                        type="button"
                         hx-post="/admin/api/test-zalo"
                         hx-target="#zalo-config-result"
                         hx-swap="innerHTML"
